@@ -38,7 +38,7 @@ INITD_DIR="/etc/init.d"
 NO_INIT=false
 INIT_SYSTEM=""   # auto-detected: systemd | openrc | none
 PKG_MANAGER=""   # auto-detected: apt | pacman | apk | dnf | yum | none
-GITHUB_REPO="guiltyspark/guiltyspark"
+GITHUB_REPO="VRCDN/guiltyspark"
 
 # ---- Colours ----------------------------------------------------------------
 RED='\033[0;31m'
