@@ -19,6 +19,11 @@ auth:
   # This key is required for all management (admin) API requests.
   admin_api_key: "CHANGE_ME_generate_a_strong_admin_api_key"
 
+  # Agents must supply this key in their registration request.
+  # Leave blank to allow any agent to register (not recommended in production).
+  # Generate one with: openssl rand -hex 32
+  registration_key: "CHANGE_ME_generate_a_strong_registration_key"
+
 heartbeat:
   # How long since the last heartbeat before an agent is marked offline.
   timeout: "90s"

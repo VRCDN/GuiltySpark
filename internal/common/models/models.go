@@ -36,12 +36,13 @@ type Agent struct {
 
 // RegisterRequest is what an agent sends when it shows up for the first time.
 type RegisterRequest struct {
-	Hostname    string   `json:"hostname"`
-	IPAddresses []string `json:"ip_addresses"`
-	Tags        []string `json:"tags"`
-	Version     string   `json:"version"`
-	OS          string   `json:"os"`
-	Region      string   `json:"region"`
+	Hostname        string   `json:"hostname"`
+	IPAddresses     []string `json:"ip_addresses"`
+	Tags            []string `json:"tags"`
+	Version         string   `json:"version"`
+	OS              string   `json:"os"`
+	Region          string   `json:"region"`
+	RegistrationKey string   `json:"registration_key,omitempty"`
 }
 
 // RegisterResponse hands back an agent ID and API key after registration.

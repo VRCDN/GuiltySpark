@@ -14,6 +14,9 @@
 #   --version VER      Binary release version to install (default: latest)
 #   --collector-url U  Collector URL for the agent config
 #   --admin-key KEY    Admin API key (collector install)
+#   --reg-key KEY      Registration key — agents must supply this to register.
+#                      Auto-generated on collector install if not provided.
+#                      Must be passed to agent installs so it ends up in agent.yaml.
 #   --agent-key KEY    Pre-shared agent API key (optional)
 #   --config-dir DIR   Config directory (default: /etc/guiltyspark)
 #   --data-dir DIR     Data/state directory (default: /var/lib/guiltyspark)
@@ -29,6 +32,7 @@ VERSION="latest"
 COLLECTOR_URL=""
 ADMIN_KEY=""
 AGENT_KEY=""
+REG_KEY=""
 CONFIG_DIR="/etc/guiltyspark"
 DATA_DIR="/var/lib/guiltyspark"
 LOG_DIR="/var/log/guiltyspark"
@@ -61,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --collector-url) COLLECTOR_URL="$2"; shift 2 ;;
     --admin-key)     ADMIN_KEY="$2"; shift 2 ;;
     --agent-key)     AGENT_KEY="$2"; shift 2 ;;
+    --reg-key)       REG_KEY="$2"; shift 2 ;;
     --config-dir)    CONFIG_DIR="$2"; shift 2 ;;
     --data-dir)      DATA_DIR="$2"; shift 2 ;;
     --no-init)       NO_INIT=true; shift ;;
@@ -189,18 +194,26 @@ install_collector() {
   # Config
   if [[ ! -f "${CONFIG_DIR}/collector.yaml" ]]; then
     local admin_key="${ADMIN_KEY:-$(gen_key)}"
-    info "Generated admin key: ${admin_key}"
-    info "(save this — it is only shown once)"
+    local reg_key="${REG_KEY:-$(gen_key)}"
+    info "Generated admin key:        ${admin_key}"
+    info "Generated registration key: ${reg_key}"
+    info "(save these — they are only shown once)"
     cat >"${CONFIG_DIR}/collector.yaml" <<EOF
 server:
-  listen_addr: "0.0.0.0:8080"
-  admin_api_key: "${admin_key}"
+  host: "0.0.0.0"
+  port: 8080
   # tls:
+  #   enabled: true
   #   cert_file: /etc/guiltyspark/tls/server.crt
   #   key_file:  /etc/guiltyspark/tls/server.key
 
-storage:
-  sqlite_path: "${DATA_DIR}/collector.db"
+database:
+  path: "${DATA_DIR}/collector.db"
+
+auth:
+  admin_api_key: "${admin_key}"
+  # Agents must supply this key in their registration request.
+  registration_key: "${reg_key}"
 
 heartbeat:
   timeout:        "90s"
@@ -208,12 +221,16 @@ heartbeat:
 
 alerts:
   dedup_window: "5m"
-  # webhook:
-  #   url:    "https://hooks.example.com/collector"
-  #   secret: "changeme"
+  # notifications:
+  #   webhook:
+  #     enabled: true
+  #     url:    "https://hooks.example.com/collector"
+  #     secret: "changeme"
 
-rules:
-  seed_if_empty: true
+log_level:  "info"
+log_format: "json"
+
+default_rules_file: "${CONFIG_DIR}/default_rules.yaml"
 EOF
     chown root:guiltyspark "${CONFIG_DIR}/collector.yaml"
     chmod 640 "${CONFIG_DIR}/collector.yaml"
@@ -338,9 +355,13 @@ install_agent() {
     cat >"${CONFIG_DIR}/agent.yaml" <<EOF
 collector:
   url:     "${COLLECTOR_URL}"
-  api_key: "${agent_key}"
   # ca_cert: /etc/guiltyspark/tls/ca.crt
   # tls_skip_verify: false
+
+auth:
+  api_key: "${agent_key}"
+  # Must match the collector's auth.registration_key.
+  registration_key: "${REG_KEY}"
 
 heartbeat:
   interval: "30s"

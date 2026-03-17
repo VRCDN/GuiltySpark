@@ -36,7 +36,8 @@ type Config struct {
 	} `yaml:"database"`
 
 	Auth struct {
-		AdminAPIKey string `yaml:"admin_api_key"`
+		AdminAPIKey     string `yaml:"admin_api_key"`
+		RegistrationKey string `yaml:"registration_key"`
 	} `yaml:"auth"`
 
 	Heartbeat struct {
@@ -163,12 +164,13 @@ func New(cfg Config, logger *slog.Logger) (*Collector, error) {
 	invStore := inventory.New(store)
 
 	apiCfg := api.Config{
-		Host:        cfg.Server.Host,
-		Port:        cfg.Server.Port,
-		TLSEnabled:  cfg.Server.TLS.Enabled,
-		TLSCertFile: cfg.Server.TLS.CertFile,
-		TLSKeyFile:  cfg.Server.TLS.KeyFile,
-		AdminAPIKey: cfg.Auth.AdminAPIKey,
+		Host:            cfg.Server.Host,
+		Port:            cfg.Server.Port,
+		TLSEnabled:      cfg.Server.TLS.Enabled,
+		TLSCertFile:     cfg.Server.TLS.CertFile,
+		TLSKeyFile:      cfg.Server.TLS.KeyFile,
+		AdminAPIKey:     cfg.Auth.AdminAPIKey,
+		RegistrationKey: cfg.Auth.RegistrationKey,
 	}
 	apiServer := api.New(apiCfg, store, rulesMgr, alertsMgr, hbMon, invStore, logger)
 

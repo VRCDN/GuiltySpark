@@ -54,7 +54,8 @@ type Config struct {
 	} `yaml:"collector"`
 
 	Auth struct {
-		APIKey string `yaml:"api_key"`
+		APIKey          string `yaml:"api_key"`
+		RegistrationKey string `yaml:"registration_key"`
 	} `yaml:"auth"`
 
 	Agent struct {
@@ -203,12 +204,13 @@ func (a *Agent) register(ctx context.Context) error {
 	hostname, _ := os.Hostname()
 	ips := collectIPAddresses()
 	req := models.RegisterRequest{
-		Hostname:    hostname,
-		IPAddresses: ips,
-		Tags:        a.cfg.Agent.Tags,
-		Version:     models.Version,
-		Region:      a.cfg.Agent.Region,
-		OS:          detectOS(),
+		Hostname:        hostname,
+		IPAddresses:     ips,
+		Tags:            a.cfg.Agent.Tags,
+		Version:         models.Version,
+		Region:          a.cfg.Agent.Region,
+		OS:              detectOS(),
+		RegistrationKey: a.cfg.Auth.RegistrationKey,
 	}
 	resp, err := a.client.Register(ctx, req)
 	if err != nil {

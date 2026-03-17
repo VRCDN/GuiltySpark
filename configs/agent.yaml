@@ -19,6 +19,10 @@ auth:
   # You can also set this manually if the agent has already been registered.
   api_key: ""
 
+  # Must match the collector's auth.registration_key.
+  # The agent sends this once during registration to prove it's allowed to join.
+  registration_key: "CHANGE_ME_must_match_collector_registration_key"
+
 agent:
   # Agent UUID — populated automatically on first run.
   id: ""

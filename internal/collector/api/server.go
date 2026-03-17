@@ -25,12 +25,13 @@ import (
 
 // Config is the server's listen address and TLS settings.
 type Config struct {
-	Host        string
-	Port        int
-	TLSEnabled  bool
-	TLSCertFile string
-	TLSKeyFile  string
-	AdminAPIKey string
+	Host            string
+	Port            int
+	TLSEnabled      bool
+	TLSCertFile     string
+	TLSKeyFile      string
+	AdminAPIKey     string
+	RegistrationKey string
 }
 
 // Server is the collector's HTTP API — handles both agent comms and the admin endpoints.
@@ -303,6 +304,14 @@ func (s *Server) handleAgentRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Hostname == "" {
 		writeError(w, http.StatusBadRequest, "hostname is required")
+		return
+	}
+
+	// reject if a registration key is configured and the request doesn't match
+	if s.cfg.RegistrationKey != "" && req.RegistrationKey != s.cfg.RegistrationKey {
+		s.logger.Warn("agent registration rejected — bad registration key", "hostname", req.Hostname, "remote", r.RemoteAddr)
+		// deliberately vague — don't tell them what was wrong
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
