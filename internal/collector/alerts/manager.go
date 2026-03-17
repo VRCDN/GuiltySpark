@@ -20,23 +20,23 @@ import (
 	"github.com/VRCDN/guiltyspark/internal/collector/storage"
 	"github.com/VRCDN/guiltyspark/internal/common/models"
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
-// NotificationConfig groups the settings for all notification backends.
 type NotificationConfig struct {
-	Webhook WebhookConfig
-	Email   EmailConfig
-	Slack   SlackConfig
+	Webhook        WebhookConfig
+	Email          EmailConfig
+	Slack          SlackConfig
+	Discord        DiscordConfig
+	CustomWebhooks []CustomWebhookConfig
 }
 
-// WebhookConfig sets up the outbound HTTP webhook.
 type WebhookConfig struct {
 	Enabled bool
 	URL     string
-	Secret  string // HMAC-SHA256 key for request signing
+	Secret  string
 }
 
-// EmailConfig is the SMTP settings.
 type EmailConfig struct {
 	Enabled  bool
 	SMTPHost string
@@ -47,10 +47,70 @@ type EmailConfig struct {
 	Password string
 }
 
-// SlackConfig just needs a webhook URL.
 type SlackConfig struct {
 	Enabled    bool
 	WebhookURL string
+}
+
+type DiscordConfig struct {
+	Enabled    bool
+	WebhookURL string
+	Username   string
+}
+
+// CustomWebhookConfig allows users to define arbitrary HTTP notifications with Go templates.
+//
+// Available template variables match the fields of alertTemplateData:
+//
+//	{{.ID}}         {{.AgentID}}     {{.RuleID}}     {{.RuleName}}
+//	{{.Severity}}   {{.AlertType}}   {{.Message}}    {{.LogLine}}
+//	{{.LogSource}}  {{.MatchedAt}}   {{.ReceivedAt}}
+//
+// Built-in template functions: upper, lower.
+type CustomWebhookConfig struct {
+	Name         string
+	Enabled      bool
+	URL          string
+	Method       string            // default "POST"
+	ContentType  string            // default "application/json"
+	Secret       string            // HMAC-SHA256 signing key
+	Headers      map[string]string // extra request headers
+	BodyTemplate string
+}
+
+type alertTemplateData struct {
+	ID         string
+	AgentID    string
+	RuleID     string
+	RuleName   string
+	Severity   string
+	AlertType  string
+	Message    string
+	LogLine    string
+	LogSource  string
+	MatchedAt  string
+	ReceivedAt string
+}
+
+func alertToTemplateData(a *models.Alert) alertTemplateData {
+	return alertTemplateData{
+		ID:         a.ID,
+		AgentID:    a.AgentID,
+		RuleID:     a.RuleID,
+		RuleName:   a.RuleName,
+		Severity:   string(a.Severity),
+		AlertType:  string(a.AlertType),
+		Message:    a.Message,
+		LogLine:    a.LogLine,
+		LogSource:  a.LogSource,
+		MatchedAt:  a.MatchedAt.UTC().Format(time.RFC3339),
+		ReceivedAt: a.ReceivedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+var customWebhookFuncs = template.FuncMap{
+	"upper": strings.ToUpper,
+	"lower": strings.ToLower,
 }
 
 // dedupKey identifies a (agent, rule) pair for the dedup cache.
@@ -154,7 +214,7 @@ func (m *Manager) CreateAgentOffline(ctx context.Context, agent *models.Agent) (
 	return m.persist(ctx, alert)
 }
 
-// CreateAgentOnline fires when a previously-offline agent comes back.
+// See above and work it out yourself — this is the opposite of CreateAgentOffline and fires when an agent comes back online.
 func (m *Manager) CreateAgentOnline(ctx context.Context, agent *models.Agent) (*models.Alert, error) {
 	alert := &models.Alert{
 		ID:         uuid.New().String(),
@@ -177,17 +237,14 @@ func (m *Manager) persist(ctx context.Context, alert *models.Alert) (*models.Ale
 	return alert, nil
 }
 
-// GetAlert retrieves a single alert.
 func (m *Manager) GetAlert(ctx context.Context, id string) (*models.Alert, error) {
 	return m.store.GetAlert(ctx, id)
 }
 
-// ListAlerts queries alerts with optional filtering.
 func (m *Manager) ListAlerts(ctx context.Context, filter models.AlertFilter) ([]*models.Alert, error) {
 	return m.store.ListAlerts(ctx, filter)
 }
 
-// AcknowledgeAlert marks an alert as acknowledged.
 func (m *Manager) AcknowledgeAlert(ctx context.Context, id, by string) error {
 	return m.store.AcknowledgeAlert(ctx, id, by)
 }
@@ -208,6 +265,19 @@ func (m *Manager) notify(alert *models.Alert) {
 	if m.cfg.Slack.Enabled {
 		if err := m.sendSlack(alert); err != nil {
 			m.logger.Error("slack notification failed", "error", err, "alert_id", alert.ID)
+		}
+	}
+	if m.cfg.Discord.Enabled {
+		if err := m.sendDiscord(alert); err != nil {
+			m.logger.Error("discord notification failed", "error", err, "alert_id", alert.ID)
+		}
+	}
+	for _, cw := range m.cfg.CustomWebhooks {
+		if !cw.Enabled {
+			continue
+		}
+		if err := m.sendCustomWebhook(cw, alert); err != nil {
+			m.logger.Error("custom webhook notification failed", "name", cw.Name, "error", err, "alert_id", alert.ID)
 		}
 	}
 }
@@ -350,6 +420,157 @@ func (m *Manager) sendSlack(alert *models.Alert) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("slack returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ---- Discord ----------------------------------------------------------------
+
+type discordEmbed struct {
+	Title       string              `json:"title"`
+	Description string              `json:"description,omitempty"`
+	Color       int                 `json:"color"`
+	Fields      []discordField      `json:"fields,omitempty"`
+	Footer      *discordEmbedFooter `json:"footer,omitempty"`
+	Timestamp   string              `json:"timestamp,omitempty"`
+}
+
+type discordField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline"`
+}
+
+type discordEmbedFooter struct {
+	Text string `json:"text"`
+}
+
+type discordPayload struct {
+	Username string         `json:"username,omitempty"`
+	Embeds   []discordEmbed `json:"embeds"`
+}
+
+func (m *Manager) sendDiscord(alert *models.Alert) error {
+	color := map[models.Severity]int{
+		models.SeverityInfo:     0x36a64f,
+		models.SeverityLow:      0xa8d8ea,
+		models.SeverityMedium:   0xf0a500,
+		models.SeverityHigh:     0xe74c3c,
+		models.SeverityCritical: 0x8e44ad,
+	}[alert.Severity]
+	if color == 0 {
+		color = 0xcccccc
+	}
+
+	fields := []discordField{
+		{Name: "Agent ID", Value: alert.AgentID, Inline: true},
+		{Name: "Severity", Value: strings.ToUpper(string(alert.Severity)), Inline: true},
+		{Name: "Type", Value: string(alert.AlertType), Inline: true},
+	}
+	if alert.RuleName != "" {
+		fields = append(fields, discordField{Name: "Rule", Value: alert.RuleName, Inline: true})
+	}
+	if alert.LogSource != "" {
+		fields = append(fields, discordField{Name: "Source", Value: alert.LogSource, Inline: true})
+	}
+
+	desc := alert.Message
+	if alert.LogLine != "" {
+		desc += "\n```\n" + alert.LogLine + "\n```"
+	}
+
+	username := m.cfg.Discord.Username
+	if username == "" {
+		username = "GuiltySpark"
+	}
+
+	payload := discordPayload{
+		Username: username,
+		Embeds: []discordEmbed{{
+			Title:       fmt.Sprintf("[%s] %s", strings.ToUpper(string(alert.AlertType)), strings.ToUpper(string(alert.Severity))),
+			Description: desc,
+			Color:       color,
+			Fields:      fields,
+			Footer:      &discordEmbedFooter{Text: "GuiltySpark • " + alert.ReceivedAt.Format(time.RFC3339)},
+			Timestamp:   alert.ReceivedAt.UTC().Format(time.RFC3339),
+		}},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(m.cfg.Discord.WebhookURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("discord webhook returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ---- Custom templated webhooks ----------------------------------------------
+
+func (m *Manager) sendCustomWebhook(cfg CustomWebhookConfig, alert *models.Alert) error {
+	tpl, err := template.New(cfg.Name).Funcs(customWebhookFuncs).Parse(cfg.BodyTemplate)
+	if err != nil {
+		return fmt.Errorf("parse body_template for %q: %w", cfg.Name, err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, alertToTemplateData(alert)); err != nil {
+		return fmt.Errorf("execute body_template for %q: %w", cfg.Name, err)
+	}
+
+	contentType := cfg.ContentType
+	if contentType == "" {
+		contentType = "application/json"
+	}
+
+	var bodyBytes []byte
+	if contentType == "application/json" {
+		var doc interface{}
+		if err := yaml.Unmarshal(rendered.Bytes(), &doc); err != nil {
+			return fmt.Errorf("body_template for %q did not render to valid YAML: %w", cfg.Name, err)
+		}
+		bodyBytes, err = json.Marshal(doc)
+		if err != nil {
+			return fmt.Errorf("marshal rendered body to JSON for %q: %w", cfg.Name, err)
+		}
+	} else {
+		bodyBytes = rendered.Bytes()
+	}
+
+	method := cfg.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	req, err := http.NewRequest(method, cfg.URL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("User-Agent", "GuiltySpark-Collector/1.0")
+	for k, v := range cfg.Headers {
+		req.Header.Set(k, v)
+	}
+	if cfg.Secret != "" {
+		mac := hmac.New(sha256.New, []byte(cfg.Secret))
+		mac.Write(bodyBytes)
+		req.Header.Set("X-GuiltySpark-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("custom webhook %q returned HTTP %d", cfg.Name, resp.StatusCode)
 	}
 	return nil
 }

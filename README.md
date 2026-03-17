@@ -261,22 +261,52 @@ alerts:
       enabled: true
       url:    "https://hooks.example.com/guiltyspark"
       secret: "hmac-signing-secret"
+    # discord:
+    #   enabled: true
+    #   webhook_url: "https://discord.com/api/webhooks/<id>/<token>"
+    #   username: "GuiltySpark"   # optional bot display name override
+    # slack:
+    #   enabled: true
+    #   webhook_url: "https://hooks.slack.com/services/..."
     # email:
     #   enabled: true
     #   smtp_host: "smtp.example.com"
     #   smtp_port: 587
     #   from:      "guiltyspark@example.com"
     #   to:        ["ops@example.com"]
-    # slack:
-    #   enabled: true
-    #   webhook_url: "https://hooks.slack.com/services/..."
-
-log_level:  "info"   # debug | info | warn | error
-log_format: "json"   # json | text
-
-default_rules_file: "/etc/guiltyspark/default_rules.yaml"
-```
-
+    # custom_webhooks:
+    #   - name: "PagerDuty"
+    #     enabled: true
+    #     url: "https://events.pagerduty.com/v2/enqueue"
+    #     headers:
+    #       Authorization: "Token token=YOUR_KEY"
+    #     body_template: |
+    #       routing_key: "YOUR_ROUTING_KEY"
+    #       event_action: "trigger"
+    #       payload:
+    #         summary: "{{ .Message }}"
+    #         severity: "{{ lower .Severity }}"
+    #         source: "{{ .AgentID }}"
+    #         custom_details:
+    #           rule_name: "{{ .RuleName }}"
+    #           alert_type: "{{ .AlertType }}"
+    #           log_line: "{{ .LogLine }}"
+    #   - name: "Teams"
+    #     enabled: true
+    #     url: "https://outlook.office.com/webhook/..."
+    #     body_template: |
+    #       "@type": "MessageCard"
+    #       "@context": "http://schema.org/extensions"
+    #       themeColor: "e74c3c"
+    #       summary: "{{ .Message }}"
+    #       sections:
+    #         - activityTitle: "[{{ upper .Severity }}] {{ .AlertType }}"
+    #           activityText: "{{ .Message }}"
+    #           facts:
+    #             - name: Agent
+    #               value: "{{ .AgentID }}"
+    #             - name: Rule
+    #               value: "{{ .RuleName }}"
 ### Agent Config
 
 `/etc/guiltyspark/agent.yaml`:
@@ -468,6 +498,8 @@ make release VERSION=v1.0.0
 - **Exec audit** — requires `CAP_AUDIT_READ` + `CAP_AUDIT_WRITE` (or running as root). The systemd unit grants these via `AmbientCapabilities`.
 - **Docker socket** — mounting `/var/run/docker.sock` grants root-equivalent access; ensure the collector host is trusted.
 - **Webhook HMAC** — the collector signs every outbound webhook payload with HMAC-SHA256 using `alerts.notifications.webhook.secret`. Verify the `X-GuiltySpark-Signature` header on your receiver.
+- **Discord** — use `alerts.notifications.discord.webhook_url`. No signing is applied (Discord handles auth via the URL token). The bot display name defaults to `GuiltySpark` and can be overridden with `discord.username`.
+- **Custom webhooks** — `alerts.notifications.custom_webhooks` accepts a list of fully templated HTTP requests. Each entry has a `body_template` written in [Go `text/template`](https://pkg.go.dev/text/template) syntax that renders to a YAML document, which is automatically converted to JSON before sending. Set `content_type` to anything other than `application/json` to send the rendered text verbatim. Available template variables: `.ID`, `.AgentID`, `.RuleID`, `.RuleName`, `.Severity`, `.AlertType`, `.Message`, `.LogLine`, `.LogSource`, `.MatchedAt`, `.ReceivedAt`. Built-in functions: `upper`, `lower`. Custom headers and optional HMAC signing (`secret`) are also supported.
 
 ---
 

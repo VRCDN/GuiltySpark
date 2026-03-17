@@ -66,6 +66,21 @@ type Config struct {
 				Enabled    bool   `yaml:"enabled"`
 				WebhookURL string `yaml:"webhook_url"`
 			} `yaml:"slack"`
+			Discord struct {
+				Enabled    bool   `yaml:"enabled"`
+				WebhookURL string `yaml:"webhook_url"`
+				Username   string `yaml:"username"`
+			} `yaml:"discord"`
+			CustomWebhooks []struct {
+				Name         string            `yaml:"name"`
+				Enabled      bool              `yaml:"enabled"`
+				URL          string            `yaml:"url"`
+				Method       string            `yaml:"method"`
+				ContentType  string            `yaml:"content_type"`
+				Secret       string            `yaml:"secret"`
+				Headers      map[string]string `yaml:"headers"`
+				BodyTemplate string            `yaml:"body_template"`
+			} `yaml:"custom_webhooks"`
 		} `yaml:"notifications"`
 	} `yaml:"alerts"`
 
@@ -139,6 +154,20 @@ func New(cfg Config, logger *slog.Logger) (*Collector, error) {
 	}
 
 	// assemble the notification config from the flat YAML structure
+	customWebhooks := make([]alerts.CustomWebhookConfig, 0, len(cfg.Alerts.Notifications.CustomWebhooks))
+	for _, cw := range cfg.Alerts.Notifications.CustomWebhooks {
+		customWebhooks = append(customWebhooks, alerts.CustomWebhookConfig{
+			Name:         cw.Name,
+			Enabled:      cw.Enabled,
+			URL:          cw.URL,
+			Method:       cw.Method,
+			ContentType:  cw.ContentType,
+			Secret:       cw.Secret,
+			Headers:      cw.Headers,
+			BodyTemplate: cw.BodyTemplate,
+		})
+	}
+
 	notifCfg := alerts.NotificationConfig{
 		Webhook: alerts.WebhookConfig{
 			Enabled: cfg.Alerts.Notifications.Webhook.Enabled,
@@ -158,6 +187,12 @@ func New(cfg Config, logger *slog.Logger) (*Collector, error) {
 			Enabled:    cfg.Alerts.Notifications.Slack.Enabled,
 			WebhookURL: cfg.Alerts.Notifications.Slack.WebhookURL,
 		},
+		Discord: alerts.DiscordConfig{
+			Enabled:    cfg.Alerts.Notifications.Discord.Enabled,
+			WebhookURL: cfg.Alerts.Notifications.Discord.WebhookURL,
+			Username:   cfg.Alerts.Notifications.Discord.Username,
+		},
+		CustomWebhooks: customWebhooks,
 	}
 
 	alertsMgr := alerts.New(store, notifCfg, cfg.Alerts.DedupWindow.Duration, logger)

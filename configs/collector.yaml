@@ -58,6 +58,58 @@ alerts:
       # Slack Incoming Webhook URL
       webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
 
+    discord:
+      enabled: false
+      # Discord channel Incoming Webhook URL
+      webhook_url: "https://discord.com/api/webhooks/<id>/<token>"
+      # Optional: override the bot display name shown in Discord.
+      # username: "GuiltySpark"
+
+    # custom_webhooks lets you define fully templated outbound HTTP requests.
+    # The body_template is a Go text/template that renders to a YAML document;
+    # it is automatically converted to JSON before sending (unless you set
+    # content_type to something other than application/json).
+    #
+    # Available template variables:
+    #   .ID  .AgentID  .RuleID  .RuleName  .Severity  .AlertType
+    #   .Message  .LogLine  .LogSource  .MatchedAt  .ReceivedAt
+    # Built-in functions: upper, lower
+    #
+    # custom_webhooks:
+    #   - name: "PagerDuty"
+    #     enabled: true
+    #     url: "https://events.pagerduty.com/v2/enqueue"
+    #     headers:
+    #       Authorization: "Token token=YOUR_PAGERDUTY_INTEGRATION_KEY"
+    #     body_template: |
+    #       routing_key: "YOUR_ROUTING_KEY"
+    #       event_action: "trigger"
+    #       payload:
+    #         summary: "{{ .Message }}"
+    #         severity: "{{ lower .Severity }}"
+    #         source: "{{ .AgentID }}"
+    #         custom_details:
+    #           rule_name: "{{ .RuleName }}"
+    #           alert_type: "{{ .AlertType }}"
+    #           log_line: "{{ .LogLine }}"
+    #
+    #   - name: "Teams"
+    #     enabled: true
+    #     url: "https://outlook.office.com/webhook/..."
+    #     body_template: |
+    #       "@type": "MessageCard"
+    #       "@context": "http://schema.org/extensions"
+    #       themeColor: "e74c3c"
+    #       summary: "{{ .Message }}"
+    #       sections:
+    #         - activityTitle: "[{{ upper .Severity }}] {{ .AlertType }}"
+    #           activityText: "{{ .Message }}"
+    #           facts:
+    #             - name: Agent
+    #               value: "{{ .AgentID }}"
+    #             - name: Rule
+    #               value: "{{ .RuleName }}"
+
 # The region label attached to all agents that register with this collector.
 region: "us-east-1"
 

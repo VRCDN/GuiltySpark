@@ -252,6 +252,25 @@ alerts:
   #     enabled: true
   #     url:    "https://hooks.example.com/collector"
   #     secret: "changeme"
+  #   discord:
+  #     enabled: true
+  #     webhook_url: "https://discord.com/api/webhooks/<id>/<token>"
+  #   slack:
+  #     enabled: true
+  #     webhook_url: "https://hooks.slack.com/services/..."
+  #   custom_webhooks:
+  #     - name: "PagerDuty"
+  #       enabled: true
+  #       url: "https://events.pagerduty.com/v2/enqueue"
+  #       headers:
+  #         Authorization: "Token token=YOUR_KEY"
+  #       body_template: |
+  #         routing_key: "YOUR_ROUTING_KEY"
+  #         event_action: "trigger"
+  #         payload:
+  #           summary: "{{ .Message }}"
+  #           severity: "{{ lower .Severity }}"
+  #           source: "{{ .AgentID }}"
 
 log_level:  "info"
 log_format: "json"
