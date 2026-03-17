@@ -1,6 +1,4 @@
-# 🔥 GuiltySpark
-
-**Production-ready server inventory and alerting system written in Go.**
+# GuiltySpark
 
 GuiltySpark monitors your fleet of Linux servers by collecting logs, tracking system inventory, and running real-time audit, all with a lightweight agent that phones home to a central collector. Alerts are dispatched via webhook, email, or Slack the moment something suspicious happens.
 
