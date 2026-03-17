@@ -32,6 +32,7 @@
 # Uninstall options:
 #   --purge            Also remove config files and data (default: keep them)
 #
+# --debug            Print extra diagnostic output
 # --help             Show this help
 
 set -eu
@@ -58,6 +59,7 @@ NO_INIT=false
 INIT_SYSTEM=""   # auto-detected: systemd | openrc | none
 PKG_MANAGER=""   # auto-detected: apt | pacman | apk | dnf | yum | none
 GITHUB_REPO="VRCDN/guiltyspark"
+DEBUG=false
 
 # ---- Colours ----------------------------------------------------------------
 RED='\033[0;31m'
@@ -70,6 +72,7 @@ info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
 success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+dbg()     { $DEBUG && echo -e "${YELLOW}[DBG]${NC}   $*" || true; }
 
 # ---- Argument parsing -------------------------------------------------------
 while [ "$#" -gt 0 ]; do
@@ -91,6 +94,7 @@ while [ "$#" -gt 0 ]; do
     --data-dir)      DATA_DIR="$2"; shift 2 ;;
     --no-init)       NO_INIT=true; shift ;;
     --no-systemd)    NO_INIT=true; shift ;; # legacy alias
+    --debug)         DEBUG=true; shift ;;
     --help|-h)
       grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'
       exit 0
@@ -178,30 +182,54 @@ download_binary() {
 
 # ---- Create system user -----------------------------------------------------
 ensure_user() {
+  dbg "ensure_user: PKG_MANAGER=${PKG_MANAGER}"
+  dbg "ensure_user: /etc/passwd entry: $(grep '^guiltyspark:' /etc/passwd 2>/dev/null || echo '(none)')"
+  dbg "ensure_user: /etc/group  entry: $(grep '^guiltyspark:' /etc/group  2>/dev/null || echo '(none)')"
+
+  # ---- Ensure the group exists (independent of the user check) ----
+  if ! grep -q '^guiltyspark:' /etc/group 2>/dev/null; then
+    dbg "ensure_user: creating group 'guiltyspark'"
+    if [ "$PKG_MANAGER" = "apk" ]; then
+      addgroup -S guiltyspark || error "Failed to create group 'guiltyspark'"
+    else
+      groupadd -r guiltyspark 2>/dev/null || \
+      groupadd    guiltyspark            || \
+      error "Failed to create group 'guiltyspark'"
+    fi
+    success "Created group 'guiltyspark'"
+  else
+    dbg "ensure_user: group 'guiltyspark' already exists"
+  fi
+
+  # ---- Ensure the user exists ----
   if id guiltyspark >/dev/null 2>&1; then
+    dbg "ensure_user: user 'guiltyspark' already exists (id=$(id guiltyspark))"
     return 0
   fi
+
+  dbg "ensure_user: creating user 'guiltyspark'"
   if [ "$PKG_MANAGER" = "apk" ]; then
-    # Alpine / BusyBox: create the group explicitly first so that
-    # "chown guiltyspark:guiltyspark" always resolves correctly.
-    # addgroup -S creates a system group; ignore "already exists" exit codes.
-    addgroup -S guiltyspark 2>/dev/null || true
-    # adduser -S system -D no-password -H no home dir -G primary group
+    # adduser -S system  -D no-password  -H no-home  -G primary-group
     adduser -S -D -H -G guiltyspark guiltyspark || \
     error "Failed to create system user 'guiltyspark'"
   else
-    # glibc useradd: -r system, -M no home dir (we create it in create_dirs)
-    useradd -r -s /bin/false -M guiltyspark 2>/dev/null || \
-    useradd -r -M guiltyspark || \
+    useradd -r -s /bin/false -M -g guiltyspark guiltyspark 2>/dev/null || \
+    useradd -r             -M -g guiltyspark guiltyspark            || \
     error "Failed to create system user 'guiltyspark'"
   fi
   success "Created system user 'guiltyspark'"
+  dbg "ensure_user: post-create id: $(id guiltyspark 2>&1)"
 }
 
 # ---- Create directories -----------------------------------------------------
 create_dirs() {
   mkdir -p "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}"
-  chown guiltyspark:guiltyspark "${DATA_DIR}" "${LOG_DIR}"
+  # Use numeric UID:GID so chown works even if nscd/name-resolution is absent.
+  local gs_uid gs_gid
+  gs_uid="$(id -u guiltyspark 2>/dev/null)" || error "User 'guiltyspark' not found after ensure_user"
+  gs_gid="$(id -g guiltyspark 2>/dev/null)" || error "Group for 'guiltyspark' not found after ensure_user"
+  dbg "create_dirs: chown ${gs_uid}:${gs_gid} ${DATA_DIR} ${LOG_DIR}"
+  chown "${gs_uid}:${gs_gid}" "${DATA_DIR}" "${LOG_DIR}"
   chmod 750 "${DATA_DIR}" "${LOG_DIR}"
 }
 
