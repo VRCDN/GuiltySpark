@@ -50,7 +50,7 @@ GuiltySpark monitors your fleet of Linux servers by collecting logs, tracking sy
 │                                                         │
 │  HTTP/TLS API ──► Rule Manager ──► Alert Manager        │
 │                        │               │                │
-│  Heartbeat Monitor      │          Webhook/Email/Slack   │
+│  Heartbeat Monitor      │          Webhook/Email/Slack  │
 │  Inventory Store        │                               │
 │  SQLite Storage ◄───────┘                               │
 └───────────────────────────────┬─────────────────────────┘
