@@ -15,6 +15,10 @@ VERSION          ?= $(shell git describe --tags --always --dirty 2>/dev/null || 
 LDFLAGS          := -ldflags "-s -w -X $(MODULE)/internal/common/models.Version=$(VERSION)"
 GO               := go
 GOFLAGS          :=
+# CGO_ENABLED=0 ensures fully static binaries with no glibc dependency.
+# This is required for musl/Alpine targets and is safe everywhere because
+# the project uses modernc/sqlite (pure Go) — no CGO anywhere.
+CGO_ENABLED      ?= 0
 
 # ---- Native installation paths (override on the command line if needed) ----
 PREFIX        ?= /usr/local
@@ -51,19 +55,19 @@ deps:
 ## build: build both binaries
 build: deps
 	@mkdir -p bin
-	$(GO) build $(LDFLAGS) -o $(BINARY_COLLECTOR) ./cmd/collector
-	$(GO) build $(LDFLAGS) -o $(BINARY_AGENT)     ./cmd/agent
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath $(LDFLAGS) -o $(BINARY_COLLECTOR) ./cmd/collector
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath $(LDFLAGS) -o $(BINARY_AGENT)     ./cmd/agent
 	@echo "Build complete: $(BINARY_COLLECTOR) $(BINARY_AGENT)"
 
 ## build-collector: build collector only
 build-collector:
 	@mkdir -p bin
-	$(GO) build $(LDFLAGS) -o $(BINARY_COLLECTOR) ./cmd/collector
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath $(LDFLAGS) -o $(BINARY_COLLECTOR) ./cmd/collector
 
 ## build-agent: build agent only
 build-agent:
 	@mkdir -p bin
-	$(GO) build $(LDFLAGS) -o $(BINARY_AGENT) ./cmd/agent
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath $(LDFLAGS) -o $(BINARY_AGENT) ./cmd/agent
 
 ## test: run tests
 test:
@@ -319,13 +323,21 @@ install-deps:
 	fi
 
 ## release: build release binaries for linux/amd64 and linux/arm64
+## CGO_ENABLED=0 + -trimpath produces fully static binaries that run on
+## both glibc (Debian/Ubuntu/RHEL/Arch) and musl (Alpine) without changes.
+## The output names match what scripts/install.sh downloads from GitHub Releases:
+##   guiltyspark-{collector,agent}-linux-{amd64,arm64}  (bare binaries, no extension)
 release: deps
 	@mkdir -p dist
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/guiltyspark-collector-linux-amd64 ./cmd/collector
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/guiltyspark-agent-linux-amd64     ./cmd/agent
-	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/guiltyspark-collector-linux-arm64 ./cmd/collector
-	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/guiltyspark-agent-linux-arm64     ./cmd/agent
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath $(LDFLAGS) -o dist/guiltyspark-collector-linux-amd64 ./cmd/collector
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath $(LDFLAGS) -o dist/guiltyspark-agent-linux-amd64     ./cmd/agent
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath $(LDFLAGS) -o dist/guiltyspark-collector-linux-arm64 ./cmd/collector
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath $(LDFLAGS) -o dist/guiltyspark-agent-linux-arm64     ./cmd/agent
 	@echo "Release binaries in dist/"
+	@echo ""
+	@echo "Upload these as GitHub Release assets for tag $(VERSION):"
+	@echo "  gh release create $(VERSION) dist/* --title $(VERSION) --notes ''"
+	@echo "or via the GitHub web UI: https://github.com/VRCDN/GuiltySpark/releases/new"
 
 ## help: show this help
 help:
