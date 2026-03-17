@@ -1,12 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # GuiltySpark install script
 # Installs guiltyspark-collector and/or guiltyspark-agent on a Linux host.
 # Supports: Debian/Ubuntu (apt), Arch Linux (pacman), Alpine Linux (apk),
 #           RHEL/CentOS/Fedora (dnf/yum).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/guiltyspark/guiltyspark/main/scripts/install.sh | \
-#       bash -s -- [--collector] [--agent] [--version v1.0.0]
+#   curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+#       sh -s -- [--collector] [--agent] [--version v1.0.0]
 #
 # Options:
 #   --collector        Install the collector (default: false)
@@ -23,7 +23,7 @@
 #   --no-init          Skip init system (systemd/OpenRC) unit installation
 #   --help             Show this help
 
-set -euo pipefail
+set -eu
 
 # ---- Defaults ---------------------------------------------------------------
 INSTALL_COLLECTOR=false
@@ -57,7 +57,7 @@ warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ---- Argument parsing -------------------------------------------------------
-while [[ $# -gt 0 ]]; do
+while [ "$#" -gt 0 ]; do
   case "$1" in
     --collector)     INSTALL_COLLECTOR=true; shift ;;
     --agent)         INSTALL_AGENT=true; shift ;;
@@ -83,8 +83,8 @@ if ! $INSTALL_COLLECTOR && ! $INSTALL_AGENT; then
 fi
 
 # ---- Pre-flight / OS detection ---------------------------------------------
-[[ "$(uname -s)" == "Linux" ]] || error "Only Linux is supported"
-[[ $EUID -eq 0 ]]              || error "Please run as root (sudo)"
+[ "$(uname -s)" = "Linux" ] || error "Only Linux is supported"
+[ "$(id -u)" -eq 0 ]         || error "Please run as root (sudo)"
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -94,15 +94,15 @@ case "$ARCH" in
 esac
 
 # Detect package manager
-if command -v apt-get &>/dev/null; then
+if command -v apt-get >/dev/null 2>&1; then
   PKG_MANAGER="apt"
-elif command -v pacman &>/dev/null; then
+elif command -v pacman >/dev/null 2>&1; then
   PKG_MANAGER="pacman"
-elif command -v apk &>/dev/null; then
+elif command -v apk >/dev/null 2>&1; then
   PKG_MANAGER="apk"
-elif command -v dnf &>/dev/null; then
+elif command -v dnf >/dev/null 2>&1; then
   PKG_MANAGER="dnf"
-elif command -v yum &>/dev/null; then
+elif command -v yum >/dev/null 2>&1; then
   PKG_MANAGER="yum"
 else
   PKG_MANAGER="none"
@@ -110,9 +110,9 @@ fi
 info "Detected package manager: ${PKG_MANAGER}"
 
 # Detect init system
-if [[ -d /run/systemd/system ]] || systemctl --version &>/dev/null 2>&1; then
+if [ -d /run/systemd/system ] || systemctl --version >/dev/null 2>&1; then
   INIT_SYSTEM="systemd"
-elif command -v rc-service &>/dev/null; then
+elif command -v rc-service >/dev/null 2>&1; then
   INIT_SYSTEM="openrc"
 else
   INIT_SYSTEM="none"
@@ -120,7 +120,7 @@ fi
 info "Detected init system: ${INIT_SYSTEM}"
 
 # Ensure curl is present
-if ! command -v curl &>/dev/null; then
+if ! command -v curl >/dev/null 2>&1; then
   info "Installing curl..."
   case "$PKG_MANAGER" in
     apt)    apt-get update -qq && apt-get install -y -q curl ;;
@@ -134,11 +134,11 @@ fi
 
 # ---- Resolve latest version -------------------------------------------------
 resolve_version() {
-  if [[ "$VERSION" == "latest" ]]; then
+  if [ "$VERSION" = "latest" ]; then
     info "Resolving latest release..."
     VERSION="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
       | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-    [[ -n "$VERSION" ]] || error "Could not determine latest version"
+    [ -n "$VERSION" ] || error "Could not determine latest version"
     info "Latest version: ${VERSION}"
   fi
 }
@@ -157,16 +157,21 @@ download_binary() {
 
 # ---- Create system user -----------------------------------------------------
 ensure_user() {
-  if id guiltyspark &>/dev/null; then
+  if id guiltyspark >/dev/null 2>&1; then
     return 0
   fi
-  # Alpine uses adduser with different flags (BusyBox)
-  if [[ "$PKG_MANAGER" == "apk" ]]; then
-    adduser -S -u 990 -h "${DATA_DIR}" -s /sbin/nologin guiltyspark 2>/dev/null || \
-    adduser -S -h "${DATA_DIR}" -s /sbin/nologin guiltyspark
+  if [ "$PKG_MANAGER" = "apk" ]; then
+    # BusyBox adduser: -S system, -D no-password, -H don't create home dir
+    # Don't specify -u (UID may conflict) or -h (dir may not exist yet)
+    adduser -S -D -H -s /bin/false guiltyspark 2>/dev/null || \
+    adduser -S -D -H guiltyspark || \
+    error "Failed to create system user 'guiltyspark'"
+    # BusyBox adduser -S creates a matching group automatically
   else
-    useradd -r -u 990 -m -d "${DATA_DIR}" -s /sbin/nologin guiltyspark 2>/dev/null || \
-    useradd -r -m -d "${DATA_DIR}" -s /sbin/nologin guiltyspark
+    # glibc useradd: -r system, -M no home dir (we create it in create_dirs)
+    useradd -r -s /bin/false -M guiltyspark 2>/dev/null || \
+    useradd -r -M guiltyspark || \
+    error "Failed to create system user 'guiltyspark'"
   fi
   success "Created system user 'guiltyspark'"
 }
@@ -192,7 +197,7 @@ install_collector() {
   download_binary "guiltyspark-collector"
 
   # Config
-  if [[ ! -f "${CONFIG_DIR}/collector.yaml" ]]; then
+  if [ ! -f "${CONFIG_DIR}/collector.yaml" ]; then
     local admin_key="${ADMIN_KEY:-$(gen_key)}"
     local reg_key="${REG_KEY:-$(gen_key)}"
     info "Generated admin key:        ${admin_key}"
@@ -241,7 +246,7 @@ EOF
 
   # Default rules
   local rules_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/configs/default_rules.yaml"
-  if [[ ! -f "${CONFIG_DIR}/default_rules.yaml" ]]; then
+  if [ ! -f "${CONFIG_DIR}/default_rules.yaml" ]; then
     curl -fsSL -o "${CONFIG_DIR}/default_rules.yaml" "$rules_url" \
       && success "Downloaded default_rules.yaml" \
       || warn "Could not download default_rules.yaml — create it manually"
@@ -279,13 +284,13 @@ EOF
 # ---- Install agent ----------------------------------------------------------
 install_agent() {
   info "=== Installing GuiltySpark Agent ==="
-  [[ -n "$COLLECTOR_URL" ]] || error "--collector-url is required when installing the agent"
+  [ -n "$COLLECTOR_URL" ] || error "--collector-url is required when installing the agent"
   resolve_version
   ensure_user
   create_dirs
   download_binary "guiltyspark-agent"
 
-  if [[ ! -f "${CONFIG_DIR}/agent.yaml" ]]; then
+  if [ ! -f "${CONFIG_DIR}/agent.yaml" ]; then
     local agent_key="${AGENT_KEY:-}"
 
     # Build distro-appropriate log_sources block.
@@ -395,7 +400,7 @@ EOF
   fi
 
   # ---- Logrotate -----------------------------------------------------------
-  if [[ -d /etc/logrotate.d ]]; then
+  if [ -d /etc/logrotate.d ]; then
     local lr_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/deployments/logrotate.d/guiltyspark-agent"
     curl -fsSL -o /etc/logrotate.d/guiltyspark-agent "$lr_url" \
       && success "Installed logrotate config" \
@@ -406,9 +411,9 @@ EOF
   # On Arch (pacman) or Alpine (apk), help the user get plain-text log files.
   case "$PKG_MANAGER" in
     pacman)
-      if command -v rsyslogd &>/dev/null && [[ -d /etc/rsyslog.d ]]; then
+      if command -v rsyslogd >/dev/null 2>&1 && [ -d /etc/rsyslog.d ]; then
         local rs_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/deployments/rsyslog.d/90-guiltyspark.conf"
-        if [[ ! -f /etc/rsyslog.d/90-guiltyspark.conf ]]; then
+        if [ ! -f /etc/rsyslog.d/90-guiltyspark.conf ]; then
           curl -fsSL -o /etc/rsyslog.d/90-guiltyspark.conf "$rs_url" \
             && success "Installed rsyslog routing config — restarting rsyslog..." \
             && (systemctl restart rsyslog 2>/dev/null || rc-service rsyslog restart 2>/dev/null || true) \
@@ -422,9 +427,9 @@ EOF
       fi
       ;;
     apk)
-      if command -v syslog-ng &>/dev/null && [[ -d /etc/syslog-ng/conf.d ]]; then
+      if command -v syslog-ng >/dev/null 2>&1 && [ -d /etc/syslog-ng/conf.d ]; then
         local sng_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/deployments/syslog-ng/90-guiltyspark.conf"
-        if [[ ! -f /etc/syslog-ng/conf.d/90-guiltyspark.conf ]]; then
+        if [ ! -f /etc/syslog-ng/conf.d/90-guiltyspark.conf ]; then
           curl -fsSL -o /etc/syslog-ng/conf.d/90-guiltyspark.conf "$sng_url" \
             && success "Installed syslog-ng routing config — restarting syslog-ng..." \
             && (rc-service syslog-ng restart 2>/dev/null || systemctl restart syslog-ng 2>/dev/null || true) \
@@ -480,5 +485,5 @@ echo "  Data dir   : ${DATA_DIR}"
 echo "  Log dir    : ${LOG_DIR}"
 if $INSTALL_COLLECTOR; then
   echo
-  echo "  Collector health: curl http://localhost:8080/health"
+  echo "  Collector health: curl http://localhost:8080/api/v1/health"
 fi
