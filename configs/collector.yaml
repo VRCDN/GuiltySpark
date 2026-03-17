@@ -63,6 +63,7 @@ region: "us-east-1"
 
 log_level:  "info"   # debug | info | warn | error
 log_format: "json"   # json | text
+log_file:   "/var/log/guiltyspark/collector.log"  # set empty to disable file logging
 
 # Optional: path to a YAML file containing default log scanning rules.
 # If the database is empty, these rules are seeded automatically on startup.

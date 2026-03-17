@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/VRCDN/guiltyspark/internal/collector"
@@ -36,8 +38,20 @@ func main() {
 		cfg.DefaultRulesFile = *rulesFile
 	}
 
-	// set up the logger
-	log := logger.New(cfg.LogFormat, cfg.LogLevel)
+	// set up the logger — tee to stdout (forwarded to journal by systemd) and
+	// an on-disk file so logs are visible without journalctl.
+	var logWriter io.Writer = os.Stdout
+	if cfg.LogFile != "" {
+		if mkErr := os.MkdirAll(filepath.Dir(cfg.LogFile), 0o750); mkErr != nil {
+			slog.Warn("could not create log directory", "path", filepath.Dir(cfg.LogFile), "error", mkErr)
+		} else if f, openErr := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640); openErr != nil {
+			slog.Warn("could not open log file", "path", cfg.LogFile, "error", openErr)
+		} else {
+			defer f.Close()
+			logWriter = io.MultiWriter(os.Stdout, f)
+		}
+	}
+	log := logger.NewWithWriter(logWriter, cfg.LogFormat, cfg.LogLevel)
 	log.Info("starting guiltyspark-collector", "config", *configFile)
 
 	// make sure the database directory exists

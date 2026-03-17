@@ -72,6 +72,7 @@ type Config struct {
 	Region    string `yaml:"region"`
 	LogLevel  string `yaml:"log_level"`
 	LogFormat string `yaml:"log_format"`
+	LogFile   string `yaml:"log_file"`
 
 	DefaultRulesFile string `yaml:"default_rules_file"`
 }
@@ -101,6 +102,7 @@ func DefaultConfig() Config {
 	cfg.Alerts.DedupWindow.Duration = 5 * time.Minute
 	cfg.LogLevel = "info"
 	cfg.LogFormat = "json"
+	cfg.LogFile = "/var/log/guiltyspark/collector.log"
 	return cfg
 }
 

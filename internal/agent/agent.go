@@ -95,6 +95,7 @@ type Config struct {
 	StateFile string `yaml:"state_file"`
 	LogLevel  string `yaml:"log_level"`
 	LogFormat string `yaml:"log_format"`
+	LogFile   string `yaml:"log_file"`
 }
 
 // DefaultConfig returns reasonable defaults. Most get overridden by the config file.
@@ -114,6 +115,7 @@ func DefaultConfig() Config {
 	cfg.StateFile = "/var/lib/guiltyspark-agent/state.json"
 	cfg.LogLevel = "info"
 	cfg.LogFormat = "json"
+	cfg.LogFile = "/var/log/guiltyspark/agent.log"
 	// common Linux log paths — not all will exist on every distro, and that's fine
 	cfg.LogSources = []LogSourceConfig{
 		{Path: "/var/log/syslog", Tags: []string{"syslog"}},

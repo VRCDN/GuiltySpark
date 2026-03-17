@@ -5,7 +5,7 @@
 
 collector:
   # URL of the GuiltySpark collector (include the scheme).
-  url: "https://collector.example.com:8443"
+  url: "https://collector.example.com:9900"
   timeout: "30s"
   tls:
     # Path to a custom CA certificate bundle (PEM format).
@@ -111,3 +111,4 @@ state_file: "/var/lib/guiltyspark-agent/state.json"
 
 log_level:  "info"   # debug | info | warn | error
 log_format: "json"   # json | text
+log_file:   "/var/log/guiltyspark/agent.log"  # set empty to disable file logging

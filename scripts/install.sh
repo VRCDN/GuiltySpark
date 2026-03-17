@@ -255,6 +255,7 @@ alerts:
 
 log_level:  "info"
 log_format: "json"
+log_file:   "${LOG_DIR}/collector.log"
 
 default_rules_file: "${CONFIG_DIR}/default_rules.yaml"
 EOF
@@ -412,6 +413,10 @@ audit:
     - "/usr/sbin"
 
 state_file: "${DATA_DIR}/agent-state.json"
+
+log_level:  "info"
+log_format: "json"
+log_file:   "${LOG_DIR}/agent.log"
 EOF
     chown root:root "${CONFIG_DIR}/agent.yaml" 2>/dev/null || true
     chmod 640 "${CONFIG_DIR}/agent.yaml"
