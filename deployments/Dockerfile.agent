@@ -1,0 +1,44 @@
+# ---- Build stage --------------------------------------------------------
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+
+# Cache dependency layer
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the agent binary
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags "-s -w -X github.com/VRCDN/guiltyspark/internal/common/models.Version=${VERSION}" \
+    -o /out/guiltyspark-agent \
+    ./cmd/agent
+
+# ---- Runtime stage ------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+ && rm -rf /var/lib/apt/lists/*
+
+# The agent needs elevated capabilities to read kernel audit logs.
+# These are granted via docker-compose / the host; the binary runs as root
+# inside the container when audit access is required.
+
+WORKDIR /app
+
+COPY --from=builder /out/guiltyspark-agent /usr/local/bin/guiltyspark-agent
+COPY configs/agent.yaml /etc/guiltyspark/agent.yaml
+
+RUN mkdir -p /var/lib/guiltyspark /var/log/guiltyspark \
+ && chmod 755 /var/lib/guiltyspark
+
+EXPOSE 0
+
+VOLUME ["/var/lib/guiltyspark", "/etc/guiltyspark", "/var/log", "/run/log"]
+
+ENTRYPOINT ["guiltyspark-agent"]
+CMD ["-config", "/etc/guiltyspark/agent.yaml"]

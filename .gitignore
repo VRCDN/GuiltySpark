@@ -1,0 +1,30 @@
+# binaries
+bin/
+dist/
+guiltyspark-collector
+guiltyspark-agent
+
+# build artefacts
+*.o
+*.a
+*.so
+
+# test cache & coverage
+*.test
+*.out
+coverage.html
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# secrets / local config overrides
+configs/local*.yaml
+configs/*.local.yaml

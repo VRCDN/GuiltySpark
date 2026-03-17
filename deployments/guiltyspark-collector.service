@@ -1,0 +1,44 @@
+[Unit]
+Description=GuiltySpark Collector
+Documentation=https://github.com/VRCDN/guiltyspark
+After=network-online.target
+Wants=network-online.target
+ConditionFileIsExecutable=/usr/local/bin/guiltyspark-collector
+
+[Service]
+Type=simple
+User=guiltyspark
+Group=guiltyspark
+
+# Paths
+WorkingDirectory=/var/lib/guiltyspark
+ExecStart=/usr/local/bin/guiltyspark-collector \
+    -config /etc/guiltyspark/collector.yaml \
+    -rules  /etc/guiltyspark/default_rules.yaml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=guiltyspark-collector
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/guiltyspark /var/log/guiltyspark
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+SecureBits=keep-caps
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

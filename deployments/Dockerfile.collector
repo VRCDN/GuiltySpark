@@ -1,0 +1,46 @@
+# ---- Build stage --------------------------------------------------------
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+
+# Cache dependency layer
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the collector binary
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags "-s -w -X github.com/VRCDN/guiltyspark/internal/common/models.Version=${VERSION}" \
+    -o /out/guiltyspark-collector \
+    ./cmd/collector
+
+# ---- Runtime stage ------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd -r -u 1001 -m -d /var/lib/guiltyspark -s /sbin/nologin guiltyspark
+
+WORKDIR /app
+
+COPY --from=builder /out/guiltyspark-collector /usr/local/bin/guiltyspark-collector
+COPY configs/collector.yaml    /etc/guiltyspark/collector.yaml
+COPY configs/default_rules.yaml /etc/guiltyspark/default_rules.yaml
+
+RUN mkdir -p /var/lib/guiltyspark /var/log/guiltyspark \
+ && chown -R guiltyspark:guiltyspark /var/lib/guiltyspark /var/log/guiltyspark /etc/guiltyspark
+
+USER guiltyspark
+
+EXPOSE 8080
+
+VOLUME ["/var/lib/guiltyspark", "/etc/guiltyspark"]
+
+ENTRYPOINT ["guiltyspark-collector"]
+CMD ["-config", "/etc/guiltyspark/collector.yaml", "-rules", "/etc/guiltyspark/default_rules.yaml"]

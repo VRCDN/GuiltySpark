@@ -1,0 +1,44 @@
+[Unit]
+Description=GuiltySpark Agent
+Documentation=https://github.com/VRCDN/guiltyspark
+After=network-online.target
+Wants=network-online.target
+ConditionFileIsExecutable=/usr/local/bin/guiltyspark-agent
+
+[Service]
+Type=simple
+# The agent runs as root so it can open the audit netlink socket and read
+# protected log files.  The install script creates a dedicated user and
+# grants it the required Linux capabilities instead if preferred.
+User=root
+Group=root
+
+WorkingDirectory=/var/lib/guiltyspark
+ExecStart=/usr/local/bin/guiltyspark-agent \
+    -config /etc/guiltyspark/agent.yaml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=guiltyspark-agent
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — relaxed because audit & log access are required.
+NoNewPrivileges=yes
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/guiltyspark /var/log/guiltyspark
+
+# Kernel audit capabilities
+CapabilityBoundingSet=CAP_AUDIT_READ CAP_AUDIT_WRITE CAP_AUDIT_CONTROL CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_AUDIT_READ CAP_AUDIT_WRITE CAP_AUDIT_CONTROL CAP_DAC_READ_SEARCH
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

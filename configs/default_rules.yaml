@@ -1,0 +1,251 @@
+# GuiltySpark — Default Log Scanning Rules
+# These rules are seeded automatically when the collector database is empty.
+# Rules are tag-scoped: a rule only fires when at least one of its tags
+# matches a tag on the log source that produced the line.
+
+rules:
+
+  # -----------------------------------------------------------------------
+  # SSH
+  # -----------------------------------------------------------------------
+
+  - name: "SSH Failed Password"
+    description: "Failed password authentication via SSH"
+    pattern: 'Failed password for (invalid user )?(?P<username>\S+) from (?P<ip>[\d.a-f:]+) port (?P<port>\d+)'
+    tags: ["sshd", "auth"]
+    severity: "medium"
+    enabled: true
+
+  - name: "SSH Invalid User"
+    description: "SSH login attempt using a non-existent username"
+    pattern: 'Invalid user (?P<username>\S+) from (?P<ip>[\d.a-f:]+)'
+    tags: ["sshd", "auth"]
+    severity: "medium"
+    enabled: true
+
+  - name: "SSH Root Login Accepted"
+    description: "Root login accepted via SSH — should be disabled"
+    pattern: 'Accepted (?:password|publickey) for root from (?P<ip>[\d.a-f:]+)'
+    tags: ["sshd", "auth"]
+    severity: "high"
+    enabled: true
+
+  - name: "SSH Login Accepted"
+    description: "Successful SSH login (informational)"
+    pattern: 'Accepted (?:password|publickey|keyboard-interactive) for (?P<username>\S+) from (?P<ip>[\d.a-f:]+) port (?P<port>\d+)'
+    tags: ["sshd", "auth"]
+    severity: "info"
+    enabled: true
+
+  - name: "SSH Connection Closed by Invalid User"
+    description: "Connection closed before authentication completed for invalid user"
+    pattern: 'Connection closed by invalid user (?P<username>\S+) (?P<ip>[\d.a-f:]+)'
+    tags: ["sshd", "auth"]
+    severity: "low"
+    enabled: true
+
+  - name: "SSH Too Many Authentication Failures"
+    description: "Possible SSH brute force — too many auth failures"
+    pattern: 'Too many authentication failures for (?P<username>\S+)'
+    tags: ["sshd", "auth"]
+    severity: "high"
+    enabled: true
+
+  - name: "SSH Possible Break-In Attempt"
+    description: "Reverse mapping check failed — possible spoofed IP"
+    pattern: 'POSSIBLE BREAK-IN ATTEMPT'
+    tags: ["sshd", "auth"]
+    severity: "high"
+    enabled: true
+
+  - name: "SSH Disconnected by User"
+    description: "Disconnected by authenticating user (informational)"
+    pattern: 'Disconnected from authenticating user (?P<username>\S+) (?P<ip>[\d.a-f:]+)'
+    tags: ["sshd"]
+    severity: "info"
+    enabled: false  # too noisy by default
+
+  # -----------------------------------------------------------------------
+  # PAM / Authentication
+  # -----------------------------------------------------------------------
+
+  - name: "PAM Authentication Failure"
+    description: "PAM subsystem reported an authentication failure"
+    pattern: 'pam_unix\(\S+\): authentication failure;.*?user=(?P<username>\S*)'
+    tags: ["pam", "auth"]
+    severity: "medium"
+    enabled: true
+
+  - name: "PAM Session Opened"
+    description: "PAM session opened for user (informational)"
+    pattern: 'pam_unix\(\S+\): session opened for user (?P<username>\S+)'
+    tags: ["pam", "auth"]
+    severity: "info"
+    enabled: false
+
+  - name: "PAM Account Locked"
+    description: "Account temporarily locked due to too many failures"
+    pattern: 'pam_tally2\(\S+\): user (?P<username>\S+) \(uid=\d+\) tally (?P<count>\d+)'
+    tags: ["pam", "auth"]
+    severity: "medium"
+    enabled: true
+
+  - name: "Sudo Command Executed"
+    description: "User executed a command with sudo"
+    pattern: 'sudo:\s+(?P<username>\S+) : TTY=\S+ ; PWD=(?P<cwd>\S+) ; USER=(?P<run_as>\S+) ; COMMAND=(?P<command>.+)'
+    tags: ["auth", "sudo", "syslog"]
+    severity: "info"
+    enabled: true
+
+  - name: "Sudo Authentication Failure"
+    description: "sudo authentication failed"
+    pattern: 'sudo:\s+(?P<username>\S+) : \d+ incorrect password attempt'
+    tags: ["auth", "sudo", "syslog"]
+    severity: "medium"
+    enabled: true
+
+  - name: "su Session Opened"
+    description: "su to another user (including root)"
+    pattern: 'pam_unix\(su[^)]*\): session opened for user (?P<username>\S+) by (?P<by>\S+)'
+    tags: ["pam", "auth"]
+    severity: "medium"
+    enabled: true
+
+  # -----------------------------------------------------------------------
+  # System / Kernel
+  # -----------------------------------------------------------------------
+
+  - name: "OOM Killer Invoked"
+    description: "Linux OOM killer terminated a process"
+    pattern: 'Out of memory: Kill process (?P<pid>\d+) \((?P<process>[^)]+)\)'
+    tags: ["syslog", "kernel"]
+    severity: "high"
+    enabled: true
+
+  - name: "Kernel Panic"
+    description: "Kernel panic detected in logs"
+    pattern: 'Kernel panic'
+    tags: ["syslog", "kernel"]
+    severity: "critical"
+    enabled: true
+
+  - name: "Kernel BUG"
+    description: "Kernel BUG() detected"
+    pattern: 'kernel BUG at'
+    tags: ["syslog", "kernel"]
+    severity: "critical"
+    enabled: true
+
+  - name: "Disk I/O Error"
+    description: "Block device reported an I/O error"
+    pattern: '(?:end_request: I/O error|Buffer I/O error on device|SCSI error|ata\d+\.00: exception)'
+    tags: ["syslog", "kernel"]
+    severity: "high"
+    enabled: true
+
+  - name: "Filesystem Read-Only Remount"
+    description: "Filesystem remounted read-only (indicates I/O errors)"
+    pattern: 'EXT[234]-fs \([^)]+\): Remounting filesystem read-only'
+    tags: ["syslog", "kernel"]
+    severity: "critical"
+    enabled: true
+
+  - name: "Segfault"
+    description: "Process segmentation fault"
+    pattern: 'segfault at (?P<addr>\S+) ip (?P<ip>\S+) sp (?P<sp>\S+) error (?P<error>\d+) in (?P<binary>\S+)'
+    tags: ["syslog", "kernel"]
+    severity: "medium"
+    enabled: true
+
+  - name: "NFS Mount Error"
+    description: "NFS client mount or I/O error"
+    pattern: 'nfs: server (?P<server>\S+) not responding'
+    tags: ["syslog", "kernel"]
+    severity: "high"
+    enabled: true
+
+  # -----------------------------------------------------------------------
+  # Cron / Scheduled Tasks
+  # -----------------------------------------------------------------------
+
+  - name: "Crontab Modified"
+    description: "A crontab file was installed or modified"
+    pattern: '\((?P<username>[^)]+)\) REPLACE \((?P<file>[^)]+)\)'
+    tags: ["syslog", "cron"]
+    severity: "medium"
+    enabled: true
+
+  - name: "Cron Command Executed"
+    description: "Cron executed a job (informational)"
+    pattern: '\((?P<username>[^)]+)\) CMD \((?P<command>.+)\)'
+    tags: ["syslog", "cron"]
+    severity: "info"
+    enabled: false
+
+  # -----------------------------------------------------------------------
+  # Docker
+  # -----------------------------------------------------------------------
+
+  - name: "Docker Privileged Container Started"
+    description: "A Docker container was started with --privileged"
+    pattern: 'create.*?"Privileged":true'
+    tags: ["docker"]
+    severity: "high"
+    enabled: true
+
+  - name: "Docker Container OOM Killed"
+    description: "Docker container was killed by the OOM killer"
+    pattern: '(?i)oom.kill|memory limit exceeded'
+    tags: ["docker"]
+    severity: "high"
+    enabled: true
+
+  - name: "Docker Image Pull"
+    description: "Docker image pull (informational / unexpected registry check)"
+    pattern: 'Pulling from (?P<image>\S+)'
+    tags: ["docker"]
+    severity: "info"
+    enabled: true
+
+  - name: "Docker Exec in Container"
+    description: "docker exec was run inside a container"
+    pattern: '(?i)docker exec|exec_create|exec_start'
+    tags: ["docker"]
+    severity: "low"
+    enabled: true
+
+  # -----------------------------------------------------------------------
+  # Network
+  # -----------------------------------------------------------------------
+
+  - name: "iptables DROPPED"
+    description: "iptables dropped a packet (firewall block)"
+    pattern: 'IN=(?P<in_iface>\S+) OUT=(?P<out_iface>\S*) MAC=\S+ SRC=(?P<src>[\d.a-f:]+) DST=(?P<dst>[\d.a-f:]+).*DPT=(?P<dport>\d+)'
+    tags: ["syslog", "kernel", "iptables"]
+    severity: "info"
+    enabled: true
+
+  - name: "Port Scan Detected (SYN flood)"
+    description: "Possible port scan — repeated SYN connections from same source"
+    pattern: 'SYN_RECV.*SRC=(?P<src>[\d.a-f:]+)'
+    tags: ["syslog", "kernel"]
+    severity: "medium"
+    enabled: false  # can be noisy; enable if needed
+
+  # -----------------------------------------------------------------------
+  # Package management
+  # -----------------------------------------------------------------------
+
+  - name: "Package Installed"
+    description: "A new package was installed via dpkg/apt"
+    pattern: 'status installed (?P<package>\S+):(?P<arch>\S+) (?P<version>\S+)'
+    tags: ["syslog", "packages"]
+    severity: "info"
+    enabled: true
+
+  - name: "Package Removed"
+    description: "A package was removed via dpkg/apt"
+    pattern: 'status (?:not-installed|config-files|half-installed) (?P<package>\S+)'
+    tags: ["syslog", "packages"]
+    severity: "info"
+    enabled: true

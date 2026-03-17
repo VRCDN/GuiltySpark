@@ -1,0 +1,26 @@
+#!/sbin/openrc-run
+# GuiltySpark Collector — OpenRC init script (Alpine Linux)
+
+name="GuiltySpark Collector"
+description="GuiltySpark central log aggregation and alerting server"
+
+command="/usr/local/bin/guiltyspark-collector"
+command_args="-config /etc/guiltyspark/collector.yaml -rules /etc/guiltyspark/default_rules.yaml"
+command_user="guiltyspark"
+command_background=true
+
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/guiltyspark/collector.log"
+error_log="/var/log/guiltyspark/collector.error.log"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath -d -o guiltyspark:guiltyspark -m 0750 /var/lib/guiltyspark
+    checkpath -d -o guiltyspark:guiltyspark -m 0750 /var/log/guiltyspark
+    checkpath -f -o guiltyspark:guiltyspark -m 0640 /var/log/guiltyspark/collector.log
+    checkpath -f -o guiltyspark:guiltyspark -m 0640 /var/log/guiltyspark/collector.error.log
+}

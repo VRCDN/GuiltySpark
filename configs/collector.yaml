@@ -1,0 +1,64 @@
+# GuiltySpark Collector — Reference Configuration
+# All fields shown; most have reasonable defaults.
+
+server:
+  host: "0.0.0.0"
+  port: 8443
+  tls:
+    enabled: true
+    cert_file: "/etc/guiltyspark/tls/collector.crt"
+    key_file:  "/etc/guiltyspark/tls/collector.key"
+
+database:
+  # Path to the SQLite database file.
+  # Directory is created automatically if it does not exist.
+  path: "/var/lib/guiltyspark/collector.db"
+
+auth:
+  # Generate a strong random key: openssl rand -hex 32
+  # This key is required for all management (admin) API requests.
+  admin_api_key: "CHANGE_ME_generate_a_strong_admin_api_key"
+
+heartbeat:
+  # How long since the last heartbeat before an agent is marked offline.
+  timeout: "90s"
+  # How often to check all agents for missed heartbeats.
+  check_interval: "30s"
+
+alerts:
+  # How long to suppress duplicate alerts for the same rule+agent pair.
+  dedup_window: "5m"
+  notifications:
+    webhook:
+      enabled: false
+      # URL to POST alert JSON to.
+      url: "https://your-endpoint.example.com/guiltyspark"
+      # Optional HMAC-SHA256 signing secret.
+      # The signature is sent in the X-GuiltySpark-Signature header.
+      secret: ""
+
+    email:
+      enabled: false
+      smtp_host: "smtp.example.com"
+      smtp_port: 587
+      from: "guiltyspark@example.com"
+      to:
+        - "admin@example.com"
+      # SMTP AUTH credentials (leave blank for no auth / relay)
+      username: ""
+      password: ""
+
+    slack:
+      enabled: false
+      # Slack Incoming Webhook URL
+      webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+
+# The region label attached to all agents that register with this collector.
+region: "us-east-1"
+
+log_level:  "info"   # debug | info | warn | error
+log_format: "json"   # json | text
+
+# Optional: path to a YAML file containing default log scanning rules.
+# If the database is empty, these rules are seeded automatically on startup.
+default_rules_file: "configs/default_rules.yaml"

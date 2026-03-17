@@ -1,0 +1,54 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Development override — single machine running both collector AND agent.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# ---------------------------------------------------------------------------
+
+services:
+
+  collector:
+    # In dev we expose the port directly (no Traefik TLS)
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=UTC
+
+  agent:
+    image: guiltyspark-agent:dev
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.agent
+      args:
+        VERSION: dev
+    container_name: guiltyspark-agent-dev
+    restart: unless-stopped
+    depends_on:
+      collector:
+        condition: service_healthy
+    environment:
+      - TZ=UTC
+    volumes:
+      # Agent state
+      - agent_data:/var/lib/guiltyspark
+      # Config (can mount a custom agent.yaml here)
+      - ${CONFIG_DIR:-./config}:/etc/guiltyspark:ro
+      # Read host logs
+      - /var/log:/var/log:ro
+      - /run/log:/run/log:ro
+      # Docker socket so the agent can read container logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    network_mode: "host"
+    # Audit access
+    cap_add:
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - AUDIT_CONTROL
+    security_opt:
+      - apparmor:unconfined
+
+volumes:
+  agent_data:
+    driver: local

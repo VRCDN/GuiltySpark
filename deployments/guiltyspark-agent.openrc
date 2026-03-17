@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# GuiltySpark Agent — OpenRC init script (Alpine Linux)
+
+name="GuiltySpark Agent"
+description="GuiltySpark monitoring agent — log scanning, inventory, and audit"
+
+command="/usr/local/bin/guiltyspark-agent"
+command_args="-config /etc/guiltyspark/agent.yaml"
+# Run as root so the agent can read protected log files and open the audit socket.
+command_user="root"
+command_background=true
+
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/guiltyspark/agent.log"
+error_log="/var/log/guiltyspark/agent.error.log"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath -d -m 0750 /var/lib/guiltyspark
+    checkpath -d -m 0750 /var/log/guiltyspark
+    checkpath -f -m 0640 /var/log/guiltyspark/agent.log
+    checkpath -f -m 0640 /var/log/guiltyspark/agent.error.log
+}
