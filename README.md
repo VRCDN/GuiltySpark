@@ -105,19 +105,46 @@ The agent registers itself with the collector on first boot and stores its crede
 
 ```bash
 # Install the collector on the aggregation host
-curl -fsSL https://raw.githubusercontent.com/VRCDN/guiltyspark/main/scripts/install.sh | \
-    sudo bash -s -- --collector
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --collector
 
 # Install the agent on each monitored host
-curl -fsSL https://raw.githubusercontent.com/VRCDN/guiltyspark/main/scripts/install.sh | \
-    sudo bash -s -- --agent --collector-url https://collector.example.com
+# --reg-key must match the registration_key printed during the collector install
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --agent \
+        --collector-url http://collector.example.com:8080 \
+        --reg-key <registration-key>
 ```
 
 The script:
 - Downloads the appropriate binary for your architecture (`amd64` / `arm64`)
 - Creates the `guiltyspark` system user
 - Writes default config files under `/etc/guiltyspark/`
-- Installs and enables a systemd unit
+- Installs and enables a systemd or OpenRC unit
+
+#### Upgrade
+
+```bash
+# Upgrade to the latest release (config untouched)
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --collector --agent --upgrade
+
+# Upgrade to a specific version
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --agent --upgrade --version v1.1.0
+```
+
+#### Uninstall
+
+```bash
+# Remove binary and service unit (keep config and data)
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --agent --uninstall
+
+# Full removal including config files and database
+curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
+    sudo sh -s -- --collector --agent --uninstall --purge
+```
 
 ### Collector
 
@@ -183,14 +210,22 @@ sudo systemctl enable --now guiltyspark-agent
 
 ```yaml
 server:
-  listen_addr:   "0.0.0.0:8080"
-  admin_api_key: "your-strong-admin-key"
+  host: "0.0.0.0"
+  port: 8080
   # tls:
+  #   enabled: true
   #   cert_file: /etc/guiltyspark/tls/server.crt
   #   key_file:  /etc/guiltyspark/tls/server.key
 
-storage:
-  sqlite_path: "/var/lib/guiltyspark/collector.db"
+database:
+  path: "/var/lib/guiltyspark/collector.db"
+
+auth:
+  # Required for all admin API requests.
+  admin_api_key: "your-strong-admin-key"
+  # Agents must supply this key when registering.
+  # Leave blank to allow any agent to register (not recommended).
+  registration_key: "your-strong-registration-key"
 
 heartbeat:
   timeout:        "90s"   # mark agent offline after this long without a ping
@@ -198,18 +233,25 @@ heartbeat:
 
 alerts:
   dedup_window: "5m"      # suppress duplicate alerts within this window
-  webhook:
-    url:    "https://hooks.example.com/guiltyspark"
-    secret: "hmac-signing-secret"
-  # email:
-  #   smtp_host: "smtp.example.com:587"
-  #   from:      "guiltyspark@example.com"
-  #   to:        ["ops@example.com"]
-  # slack:
-  #   webhook_url: "https://hooks.slack.com/services/..."
+  notifications:
+    webhook:
+      enabled: true
+      url:    "https://hooks.example.com/guiltyspark"
+      secret: "hmac-signing-secret"
+    # email:
+    #   enabled: true
+    #   smtp_host: "smtp.example.com"
+    #   smtp_port: 587
+    #   from:      "guiltyspark@example.com"
+    #   to:        ["ops@example.com"]
+    # slack:
+    #   enabled: true
+    #   webhook_url: "https://hooks.slack.com/services/..."
 
-rules:
-  seed_if_empty: true     # load default_rules.yaml when DB has no rules
+log_level:  "info"   # debug | info | warn | error
+log_format: "json"   # json | text
+
+default_rules_file: "/etc/guiltyspark/default_rules.yaml"
 ```
 
 ### Agent Config
@@ -218,9 +260,23 @@ rules:
 
 ```yaml
 collector:
-  url:     "https://collector.example.com"
-  api_key: ""             # leave empty; agent self-registers on first boot
-  # ca_cert: /etc/guiltyspark/tls/ca.crt
+  url: "https://collector.example.com:8080"
+  timeout: "30s"
+  tls:
+    # ca_cert: /etc/guiltyspark/tls/ca.crt
+    skip_verify: false
+
+auth:
+  # Populated automatically after first registration.
+  api_key: ""
+  # Must match the collector's auth.registration_key.
+  registration_key: "your-strong-registration-key"
+
+agent:
+  tags:
+    - "production"
+    - "linux"
+  region: "us-east-1"
 
 heartbeat:
   interval: "30s"
@@ -244,13 +300,16 @@ inventory:
   interval: "1h"
 
 audit:
-  exec_enabled: true
-  file_enabled: true
-  watch_paths:
-    - "/etc"
-    - "/bin"
-    - "/usr/bin"
-    - "/usr/sbin"
+  enabled: true
+  exec:
+    enabled: true
+  file_watch:
+    enabled: true
+    paths:
+      - "/etc"
+      - "/bin"
+      - "/usr/bin"
+      - "/usr/sbin"
 
 state_file: "/var/lib/guiltyspark/agent-state.json"
 ```
@@ -340,14 +399,14 @@ All endpoints accept and return `application/json`. Agent endpoints require `X-A
 **Requirements:** Go 1.22+, Linux (for audit subsystem; other platforms build but exec-audit is no-op)
 
 ```bash
-git clone https://github.com/VRCDN/guiltyspark.git
-cd guiltyspark
+git clone https://github.com/VRCDN/GuiltySpark.git
+cd GuiltySpark
 
 # Build both binaries to ./bin/
 make build
 
 # Cross-compile for linux/arm64
-make build GOARCH=arm64
+GOARCH=arm64 make build
 
 # Run tests
 make test
@@ -355,7 +414,7 @@ make test
 # Lint (requires golangci-lint)
 make lint
 
-# Build versioned release archives
+# Build release binaries for all supported platforms (dist/)
 make release VERSION=v1.0.0
 ```
 
@@ -380,11 +439,12 @@ make release VERSION=v1.0.0
 ## Security Notes
 
 - **Admin key** — treat it like a root password; rotate it if compromised.
+- **Registration key** — controls which agents are allowed to join. Set `auth.registration_key` on the collector and supply the same value via `--reg-key` (or `auth.registration_key` in agent.yaml) on each agent. Without it, any host that can reach the collector can register.
 - **Agent keys** — issued per agent at registration; revoke by deleting the agent via the API.
 - **TLS** — strongly recommended in production. Use `make cert` to generate a self-signed cert for testing, or point `tls.cert_file` / `tls.key_file` at a real certificate.
 - **Exec audit** — requires `CAP_AUDIT_READ` + `CAP_AUDIT_WRITE` (or running as root). The systemd unit grants these via `AmbientCapabilities`.
 - **Docker socket** — mounting `/var/run/docker.sock` grants root-equivalent access; ensure the collector host is trusted.
-- **Webhook HMAC** — the collector signs every outbound webhook payload with HMAC-SHA256 using `alerts.webhook.secret`. Verify the `X-GuiltySpark-Signature` header on your receiver.
+- **Webhook HMAC** — the collector signs every outbound webhook payload with HMAC-SHA256 using `alerts.notifications.webhook.secret`. Verify the `X-GuiltySpark-Signature` header on your receiver.
 
 ---
 

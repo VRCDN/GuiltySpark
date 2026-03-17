@@ -1,33 +1,44 @@
 #!/bin/sh
 # GuiltySpark install script
-# Installs guiltyspark-collector and/or guiltyspark-agent on a Linux host.
+# Installs, upgrades, or uninstalls guiltyspark-collector and/or guiltyspark-agent.
 # Supports: Debian/Ubuntu (apt), Arch Linux (pacman), Alpine Linux (apk),
 #           RHEL/CentOS/Fedora (dnf/yum).
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
-#       sh -s -- [--collector] [--agent] [--version v1.0.0]
+#       sh -s -- [--collector] [--agent] [--install|--upgrade|--uninstall] [OPTIONS]
 #
-# Options:
-#   --collector        Install the collector (default: false)
-#   --agent            Install the agent     (default: false)
-#   --version VER      Binary release version to install (default: latest)
-#   --collector-url U  Collector URL for the agent config
+# Modes (pick one, default is --install):
+#   --install          Install the selected component(s)
+#   --upgrade          Stop service, replace binary, restart — config untouched
+#   --uninstall        Remove binary and service unit
+#
+# Components (pick at least one):
+#   --collector        Act on the collector
+#   --agent            Act on the agent
+#
+# Install options:
+#   --version VER      Release version to download (default: latest)
+#   --collector-url U  Collector URL written into the agent config
 #   --admin-key KEY    Admin API key (collector install)
-#   --reg-key KEY      Registration key — agents must supply this to register.
-#                      Auto-generated on collector install if not provided.
-#                      Must be passed to agent installs so it ends up in agent.yaml.
+#   --reg-key KEY      Registration key — must match on both collector and agent
 #   --agent-key KEY    Pre-shared agent API key (optional)
-#   --config-dir DIR   Config directory (default: /etc/guiltyspark)
-#   --data-dir DIR     Data/state directory (default: /var/lib/guiltyspark)
-#   --no-init          Skip init system (systemd/OpenRC) unit installation
-#   --help             Show this help
+#   --config-dir DIR   Config directory       (default: /etc/guiltyspark)
+#   --data-dir DIR     Data/state directory   (default: /var/lib/guiltyspark)
+#   --no-init          Skip init system registration
+#
+# Uninstall options:
+#   --purge            Also remove config files and data (default: keep them)
+#
+# --help             Show this help
 
 set -eu
 
 # ---- Defaults ---------------------------------------------------------------
 INSTALL_COLLECTOR=false
 INSTALL_AGENT=false
+MODE="install"    # install | upgrade | uninstall
+PURGE=false
 VERSION="latest"
 COLLECTOR_URL=""
 ADMIN_KEY=""
@@ -61,6 +72,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --collector)     INSTALL_COLLECTOR=true; shift ;;
     --agent)         INSTALL_AGENT=true; shift ;;
+    --install)       MODE="install"; shift ;;
+    --upgrade)       MODE="upgrade"; shift ;;
+    --uninstall)     MODE="uninstall"; shift ;;
+    --purge)         PURGE=true; shift ;;
     --version)       VERSION="$2"; shift 2 ;;
     --collector-url) COLLECTOR_URL="$2"; shift 2 ;;
     --admin-key)     ADMIN_KEY="$2"; shift 2 ;;
@@ -473,17 +488,155 @@ EOF
   fi
 }
 
-# ---- Main -------------------------------------------------------------------
-$INSTALL_COLLECTOR && install_collector
-$INSTALL_AGENT     && install_agent
+# ---- Service stop/start helpers --------------------------------------------
+# Call with the bare service name, e.g. "guiltyspark-collector"
+svc_stop() {
+  local svc="$1"
+  case "$INIT_SYSTEM" in
+    systemd) systemctl stop "$svc" 2>/dev/null || true ;;
+    openrc)  rc-service "$svc" stop 2>/dev/null || true ;;
+  esac
+}
+svc_start() {
+  local svc="$1"
+  case "$INIT_SYSTEM" in
+    systemd) systemctl start "$svc" ;;
+    openrc)  rc-service "$svc" start ;;
+    *) warn "No init system detected — start manually: ${BIN_DIR}/${svc}" ;;
+  esac
+}
+svc_disable() {
+  local svc="$1"
+  case "$INIT_SYSTEM" in
+    systemd)
+      systemctl disable "$svc" 2>/dev/null || true
+      rm -f "${SYSTEMD_DIR}/${svc}.service"
+      systemctl daemon-reload
+      ;;
+    openrc)
+      rc-update del "$svc" default 2>/dev/null || true
+      rm -f "${INITD_DIR}/${svc}"
+      ;;
+  esac
+}
+svc_update_unit() {
+  # Download the latest service unit and reload, without starting.
+  local svc="$1"
+  case "$INIT_SYSTEM" in
+    systemd)
+      curl -fsSL -o "${SYSTEMD_DIR}/${svc}.service" \
+        "https://raw.githubusercontent.com/${GITHUB_REPO}/main/deployments/${svc}.service"
+      systemctl daemon-reload
+      ;;
+    openrc)
+      curl -fsSL -o "${INITD_DIR}/${svc}" \
+        "https://raw.githubusercontent.com/${GITHUB_REPO}/main/deployments/${svc}.openrc"
+      chmod 755 "${INITD_DIR}/${svc}"
+      ;;
+  esac
+}
 
-echo
-success "GuiltySpark installation complete!"
-echo
-echo "  Config dir : ${CONFIG_DIR}"
-echo "  Data dir   : ${DATA_DIR}"
-echo "  Log dir    : ${LOG_DIR}"
-if $INSTALL_COLLECTOR; then
-  echo
-  echo "  Collector health: curl http://localhost:8080/api/v1/health"
-fi
+# ---- Upgrade collector ------------------------------------------------------
+upgrade_collector() {
+  info "=== Upgrading GuiltySpark Collector ==="
+  resolve_version
+  info "Stopping collector..."
+  svc_stop "guiltyspark-collector"
+  download_binary "guiltyspark-collector"
+  svc_update_unit "guiltyspark-collector"
+  info "Starting collector..."
+  svc_start "guiltyspark-collector"
+  success "Collector upgraded to ${VERSION}"
+}
+
+# ---- Upgrade agent ----------------------------------------------------------
+upgrade_agent() {
+  info "=== Upgrading GuiltySpark Agent ==="
+  resolve_version
+  info "Stopping agent..."
+  svc_stop "guiltyspark-agent"
+  download_binary "guiltyspark-agent"
+  svc_update_unit "guiltyspark-agent"
+  info "Starting agent..."
+  svc_start "guiltyspark-agent"
+  success "Agent upgraded to ${VERSION}"
+}
+
+# ---- Uninstall collector ----------------------------------------------------
+uninstall_collector() {
+  info "=== Uninstalling GuiltySpark Collector ==="
+  svc_stop    "guiltyspark-collector"
+  svc_disable "guiltyspark-collector"
+  rm -f "${BIN_DIR}/guiltyspark-collector"
+  success "Removed binary and service unit"
+  if $PURGE; then
+    rm -f "${CONFIG_DIR}/collector.yaml" "${CONFIG_DIR}/default_rules.yaml"
+    rm -rf "${DATA_DIR}/collector.db" "${DATA_DIR}/collector.db-shm" "${DATA_DIR}/collector.db-wal"
+    success "Purged collector config and database"
+    warn "Data directory ${DATA_DIR} left in place (may be shared with agent)"
+  else
+    warn "Config and data left in place. Re-run with --purge to remove:"
+    warn "  ${CONFIG_DIR}/collector.yaml"
+    warn "  ${DATA_DIR}/collector.db"
+  fi
+}
+
+# ---- Uninstall agent --------------------------------------------------------
+uninstall_agent() {
+  info "=== Uninstalling GuiltySpark Agent ==="
+  svc_stop    "guiltyspark-agent"
+  svc_disable "guiltyspark-agent"
+  rm -f "${BIN_DIR}/guiltyspark-agent"
+  rm -f /etc/logrotate.d/guiltyspark-agent 2>/dev/null || true
+  success "Removed binary, service unit, and logrotate config"
+  if $PURGE; then
+    rm -f "${CONFIG_DIR}/agent.yaml"
+    rm -f "${DATA_DIR}/agent-state.json"
+    success "Purged agent config and state file"
+    warn "Data directory ${DATA_DIR} left in place (may be shared with collector)"
+  else
+    warn "Config and state left in place. Re-run with --purge to remove:"
+    warn "  ${CONFIG_DIR}/agent.yaml"
+    warn "  ${DATA_DIR}/agent-state.json"
+  fi
+}
+
+# ---- Main -------------------------------------------------------------------
+case "$MODE" in
+  install)
+    $INSTALL_COLLECTOR && install_collector
+    $INSTALL_AGENT     && install_agent
+    echo
+    success "GuiltySpark installation complete!"
+    echo
+    echo "  Config dir : ${CONFIG_DIR}"
+    echo "  Data dir   : ${DATA_DIR}"
+    echo "  Log dir    : ${LOG_DIR}"
+    if $INSTALL_COLLECTOR; then
+      echo
+      echo "  Collector health: curl http://localhost:8080/health"
+      echo "                or: curl http://localhost:8080/api/v1/health"
+    fi
+    ;;
+  upgrade)
+    $INSTALL_COLLECTOR && upgrade_collector
+    $INSTALL_AGENT     && upgrade_agent
+    echo
+    success "Upgrade complete!"
+    ;;
+  uninstall)
+    # Uninstall agent first so the collector is the last thing removed
+    $INSTALL_AGENT     && uninstall_agent
+    $INSTALL_COLLECTOR && uninstall_collector
+    # If both were removed with --purge, try to clean up shared dirs if empty
+    if $PURGE && $INSTALL_COLLECTOR && $INSTALL_AGENT; then
+      rmdir "${DATA_DIR}" 2>/dev/null && success "Removed ${DATA_DIR}" || true
+      rmdir "${LOG_DIR}"  2>/dev/null && success "Removed ${LOG_DIR}"  || true
+      rmdir "${CONFIG_DIR}" 2>/dev/null && success "Removed ${CONFIG_DIR}" || true
+      # Don't remove the system user — other things may depend on it
+      warn "System user 'guiltyspark' left in place (remove manually if desired)"
+    fi
+    echo
+    success "Uninstall complete!"
+    ;;
+esac
