@@ -182,12 +182,13 @@ ensure_user() {
     return 0
   fi
   if [ "$PKG_MANAGER" = "apk" ]; then
-    # BusyBox adduser: -S system, -D no-password, -H don't create home dir
-    # Don't specify -u (UID may conflict) or -h (dir may not exist yet)
-    adduser -S -D -H -s /bin/false guiltyspark 2>/dev/null || \
-    adduser -S -D -H guiltyspark || \
+    # Alpine / BusyBox: create the group explicitly first so that
+    # "chown guiltyspark:guiltyspark" always resolves correctly.
+    # addgroup -S creates a system group; ignore "already exists" exit codes.
+    addgroup -S guiltyspark 2>/dev/null || true
+    # adduser -S system -D no-password -H no home dir -G primary group
+    adduser -S -D -H -G guiltyspark guiltyspark || \
     error "Failed to create system user 'guiltyspark'"
-    # BusyBox adduser -S creates a matching group automatically
   else
     # glibc useradd: -r system, -M no home dir (we create it in create_dirs)
     useradd -r -s /bin/false -M guiltyspark 2>/dev/null || \
@@ -644,8 +645,7 @@ case "$MODE" in
     echo "  Log dir    : ${LOG_DIR}"
     if $INSTALL_COLLECTOR; then
       echo
-      echo "  Collector health: curl http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/health"
-      echo "                or: curl http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/health"
+      echo "  Collector health: curl http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/health"
     fi
     ;;
   upgrade)
