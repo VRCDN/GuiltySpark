@@ -3,7 +3,7 @@
 
 server:
   host: "0.0.0.0"
-  port: 8443
+  port: 9900
   tls:
     enabled: true
     cert_file: "/etc/guiltyspark/tls/collector.crt"

@@ -39,15 +39,15 @@ services:
       - guiltyspark
     # Expose the API only on the internal network; Traefik forwards to it.
     expose:
-      - "8080"
+      - "9900"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.collector.rule=Host(`${COLLECTOR_DOMAIN:-collector.example.com}`)"
       - "traefik.http.routers.collector.entrypoints=websecure"
       - "traefik.http.routers.collector.tls.certresolver=letsencrypt"
-      - "traefik.http.services.collector.loadbalancer.server.port=8080"
+      - "traefik.http.services.collector.loadbalancer.server.port=9900"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:9900/health"]
       interval: 30s
       timeout: 5s
       retries: 3

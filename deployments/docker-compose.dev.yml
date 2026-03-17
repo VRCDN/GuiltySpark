@@ -12,7 +12,7 @@ services:
   collector:
     # In dev we expose the port directly (no Traefik TLS)
     ports:
-      - "8080:8080"
+      - "9900:9900"
     environment:
       - TZ=UTC
 

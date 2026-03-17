@@ -100,7 +100,7 @@ type Config struct {
 // DefaultConfig returns reasonable defaults. Most get overridden by the config file.
 func DefaultConfig() Config {
 	var cfg Config
-	cfg.Collector.URL = "http://localhost:8443"
+	cfg.Collector.URL = "http://localhost:9900"
 	cfg.Collector.Timeout.Duration = 30 * time.Second
 	cfg.Heartbeat.Interval.Duration = 30 * time.Second
 	cfg.Inventory.Enabled = true

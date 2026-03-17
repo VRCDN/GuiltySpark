@@ -86,7 +86,7 @@ GuiltySpark monitors your fleet of Linux servers by collecting logs, tracking sy
 # 1 — Build
 make build
 
-# 2 — Run the collector (listens on :8080)
+# 2 — Run the collector (listens on :9900)
 ./bin/guiltyspark-collector \
     -config configs/collector.yaml \
     -rules  configs/default_rules.yaml
@@ -106,13 +106,15 @@ The agent registers itself with the collector on first boot and stores its crede
 ```bash
 # Install the collector on the aggregation host
 curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
-    sudo sh -s -- --collector
+    sudo sh -s -- --collector \
+        --admin-key <admin-key> \
+        --reg-key <registration-key>
 
 # Install the agent on each monitored host
-# --reg-key must match the registration_key printed during the collector install
+# --reg-key must match the registration_key set during the collector install
 curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
     sudo sh -s -- --agent \
-        --collector-url http://collector.example.com:8080 \
+        --collector-url http://collector.example.com:9900 \
         --reg-key <registration-key>
 ```
 
@@ -122,14 +124,35 @@ The script:
 - Writes default config files under `/etc/guiltyspark/`
 - Installs and enables a systemd or OpenRC unit
 
+#### All install options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--collector` | — | Act on the collector component |
+| `--agent` | — | Act on the agent component |
+| `--install` | ✓ | Install the selected component(s) *(default mode)* |
+| `--upgrade` | — | Stop service, replace binary, restart — config untouched |
+| `--uninstall` | — | Remove binary and service unit |
+| `--purge` | — | Also remove config files and data (use with `--uninstall`) |
+| `--version VER` | `latest` | Release version to download (e.g. `v1.1.0`) |
+| `--host HOST` | `0.0.0.0` | Collector listen address |
+| `--port PORT` | `9900` | Collector listen port |
+| `--collector-url URL` | — | Collector URL written into the agent config |
+| `--admin-key KEY` | — | Admin API key (collector install) |
+| `--reg-key KEY` | — | Registration key — must match on both collector and agent |
+| `--agent-key KEY` | — | Pre-shared agent API key (optional) |
+| `--config-dir DIR` | `/etc/guiltyspark` | Config directory |
+| `--data-dir DIR` | `/var/lib/guiltyspark` | Data/state directory |
+| `--no-init` | — | Skip init system registration (systemd / OpenRC) |
+
 #### Upgrade
 
 ```bash
-# Upgrade to the latest release (config untouched)
+# Upgrade collector and agent to the latest release (config untouched)
 curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
     sudo sh -s -- --collector --agent --upgrade
 
-# Upgrade to a specific version
+# Upgrade agent to a specific version
 curl -fsSL https://raw.githubusercontent.com/VRCDN/GuiltySpark/main/scripts/install.sh | \
     sudo sh -s -- --agent --upgrade --version v1.1.0
 ```
@@ -211,7 +234,7 @@ sudo systemctl enable --now guiltyspark-agent
 ```yaml
 server:
   host: "0.0.0.0"
-  port: 8080
+  port: 9900
   # tls:
   #   enabled: true
   #   cert_file: /etc/guiltyspark/tls/server.crt
@@ -260,7 +283,7 @@ default_rules_file: "/etc/guiltyspark/default_rules.yaml"
 
 ```yaml
 collector:
-  url: "https://collector.example.com:8080"
+  url: "https://collector.example.com:9900"
   timeout: "30s"
   tls:
     # ca_cert: /etc/guiltyspark/tls/ca.crt
@@ -340,7 +363,7 @@ pattern: 'Failed password for (?P<username>\S+) from (?P<ip>[\d.]+)'
 ### Managing Rules via API
 
 ```bash
-BASE="https://collector.example.com"
+BASE="https://collector.example.com:9900"
 KEY="your-admin-key"
 
 # List all rules

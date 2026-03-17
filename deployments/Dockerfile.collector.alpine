@@ -34,7 +34,7 @@ RUN mkdir -p /var/lib/guiltyspark /var/log/guiltyspark \
 
 USER guiltyspark
 
-EXPOSE 8080
+EXPOSE 9900
 
 VOLUME ["/var/lib/guiltyspark", "/etc/guiltyspark"]
 

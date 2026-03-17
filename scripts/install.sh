@@ -19,6 +19,8 @@
 #
 # Install options:
 #   --version VER      Release version to download (default: latest)
+#   --host HOST        Collector listen address   (default: 0.0.0.0)
+#   --port PORT        Collector listen port      (default: 9900)
 #   --collector-url U  Collector URL written into the agent config
 #   --admin-key KEY    Admin API key (collector install)
 #   --reg-key KEY      Registration key — must match on both collector and agent
@@ -40,6 +42,8 @@ INSTALL_AGENT=false
 MODE="install"    # install | upgrade | uninstall
 PURGE=false
 VERSION="latest"
+COLLECTOR_HOST="0.0.0.0"
+COLLECTOR_PORT="9900"
 COLLECTOR_URL=""
 ADMIN_KEY=""
 AGENT_KEY=""
@@ -77,6 +81,8 @@ while [ "$#" -gt 0 ]; do
     --uninstall)     MODE="uninstall"; shift ;;
     --purge)         PURGE=true; shift ;;
     --version)       VERSION="$2"; shift 2 ;;
+    --host)          COLLECTOR_HOST="$2"; shift 2 ;;
+    --port)          COLLECTOR_PORT="$2"; shift 2 ;;
     --collector-url) COLLECTOR_URL="$2"; shift 2 ;;
     --admin-key)     ADMIN_KEY="$2"; shift 2 ;;
     --agent-key)     AGENT_KEY="$2"; shift 2 ;;
@@ -220,8 +226,8 @@ install_collector() {
     info "(save these — they are only shown once)"
     cat >"${CONFIG_DIR}/collector.yaml" <<EOF
 server:
-  host: "0.0.0.0"
-  port: 8080
+  host: "${COLLECTOR_HOST}"
+  port: ${COLLECTOR_PORT}
   # tls:
   #   enabled: true
   #   cert_file: /etc/guiltyspark/tls/server.crt
@@ -614,8 +620,8 @@ case "$MODE" in
     echo "  Log dir    : ${LOG_DIR}"
     if $INSTALL_COLLECTOR; then
       echo
-      echo "  Collector health: curl http://localhost:8080/health"
-      echo "                or: curl http://localhost:8080/api/v1/health"
+      echo "  Collector health: curl http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/health"
+      echo "                or: curl http://${COLLECTOR_HOST}:${COLLECTOR_PORT}/api/v1/health"
     fi
     ;;
   upgrade)

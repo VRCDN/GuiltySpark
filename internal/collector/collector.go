@@ -94,7 +94,7 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 func DefaultConfig() Config {
 	var cfg Config
 	cfg.Server.Host = "0.0.0.0"
-	cfg.Server.Port = 8443
+	cfg.Server.Port = 9900
 	cfg.Database.Path = "/var/lib/guiltyspark/collector.db"
 	cfg.Heartbeat.Timeout.Duration = 90 * time.Second
 	cfg.Heartbeat.CheckInterval.Duration = 30 * time.Second
