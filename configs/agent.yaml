@@ -1,97 +1,75 @@
-# GuiltySpark Agent — Reference Configuration
-# Copy this file, fill in the collector URL + admin key, then run the agent.
-# The agent will register itself on first boot and persist its credentials
-# in the state_file below.
+# GuiltySpark Agent — fill in collector URL and registration_key, everything else has sane defaults.
 
 collector:
-  # URL of the GuiltySpark collector (include the scheme).
   url: "https://collector.example.com:9900"
   timeout: "30s"
   tls:
-    # Path to a custom CA certificate bundle (PEM format).
-    # Leave blank to use the system certificate pool.
-    ca_cert: ""
-    # Set to true only in development / testing.
-    skip_verify: false
+    ca_cert: ""        # custom CA bundle; leave blank for system pool
+    skip_verify: false # don't touch this in prod
 
 auth:
-  # Populated automatically after first registration.
-  # You can also set this manually if the agent has already been registered.
-  api_key: ""
-
-  # Must match the collector's auth.registration_key.
-  # The agent sends this once during registration to prove it's allowed to join.
+  api_key: ""          # populated automatically on first registration
   registration_key: "CHANGE_ME_must_match_collector_registration_key"
 
 agent:
-  # Agent UUID — populated automatically on first run.
-  id: ""
-  # Tags help you organise agents and scope rules.
+  id: ""               # populated automatically
   tags:
     - "production"
     - "linux"
-  # Region — should match the collector's region label.
   region: "us-east-1"
 
 heartbeat:
   interval: "30s"
 
-# Log sources to monitor. Tags must overlap with rule tags for a rule to fire.
-# Paths that do not exist on the host are silently ignored by the agent.
+# Rules match against log sources by tag — a rule fires only when at least one
+# of its tags overlaps with the source's tags. Non-existent paths are ignored.
 log_sources:
-  # ── Debian / Ubuntu ─────────────────────────────────────────────────────
+
+  # Debian / Ubuntu
   - path: "/var/log/syslog"
-    tags: ["syslog"]
+    tags: ["syslog", "cron", "daemon"]
   - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/kern.log"
     tags: ["syslog", "kernel"]
   - path: "/var/log/dpkg.log"
     tags: ["syslog", "packages"]
 
-  # ── RHEL / CentOS / Fedora ──────────────────────────────────────────────
+  # RHEL / CentOS / Fedora
+  - path: "/var/log/messages"
+    tags: ["syslog", "kernel", "cron", "daemon"]
+  - path: "/var/log/secure"
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
+  - path: "/var/log/audit/audit.log"
+    tags: ["auth", "audit"]
+
+  # Alpine — BusyBox dumps everything into one file with no facility splitting,
+  # so just tag it "syslog" and let the platform-scoped rules on the collector
+  # sort it out. Yes, this is annoying. No, there isn't a cleaner way without
+  # replacing BusyBox syslogd with syslog-ng and reconfiguring everything.
   - path: "/var/log/messages"
     tags: ["syslog"]
-  - path: "/var/log/secure"
-    tags: ["syslog", "sshd", "pam", "auth"]
-  - path: "/var/log/audit/audit.log"
-    tags: ["syslog", "auth", "audit"]
 
-  # ── Arch Linux ──────────────────────────────────────────────────────────
-  # Arch ships with systemd-journald by default; persistent journal logs
-  # are written to /var/log/journal/. Use journalctl or configure
-  # syslog-ng / rsyslog to write plain-text files.
-  # If rsyslog/syslog-ng is installed the paths below are typical:
-  - path: "/var/log/syslog.log"
-    tags: ["syslog"]
-  - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
-
-  # ── Alpine Linux (BusyBox syslogd / syslog-ng) ──────────────────────────
-  # Alpine's default BusyBox syslogd writes to /var/log/messages.
-  # /var/log/syslog is also common if syslog-ng is installed.
-  # /var/log/auth.log requires explicit facility routing in syslog-ng.
-  - path: "/var/log/messages"   # also used by RHEL; safe to list twice
-    tags: ["syslog"]
+  # Arch (journald by default — these only exist if you've set up rsyslog/syslog-ng)
+  # - path: "/var/log/syslog.log"
+  #   tags: ["syslog", "cron", "daemon"]
+  # - path: "/var/log/auth.log"
+  #   tags: ["syslog", "sshd", "auth", "pam", "sudo"]
 
 docker:
   enabled: true
-  # Path to the Docker Engine Unix socket.
   socket: "/var/run/docker.sock"
-  # Tags applied to all Docker log sources.
   container_tags:
     - "docker"
 
 inventory:
   enabled: true
-  # How often to collect and submit system inventory.
   interval: "1h"
 
 audit:
   enabled: true
   file_watch:
     enabled: true
-    # Directories to watch recursively for file create/modify/delete/chmod events.
     paths:
       - "/etc"
       - "/usr/bin"
@@ -101,14 +79,10 @@ audit:
       - "/root"
       - "/home"
   exec:
-    # Requires CAP_AUDIT_READ + CAP_AUDIT_WRITE (or root).
-    # Falls back to tailing /var/log/audit/audit.log automatically.
-    enabled: true
+    enabled: true # needs CAP_AUDIT_READ + CAP_AUDIT_WRITE; falls back to tailing audit.log
 
-# Path where the agent stores its persistent state (agent ID, API key, etc.)
-# The directory is created automatically.
 state_file: "/var/lib/guiltyspark-agent/state.json"
 
 log_level:  "info"   # debug | info | warn | error
 log_format: "json"   # json | text
-log_file:   "/var/log/guiltyspark/agent.log"  # set empty to disable file logging
+log_file:   "/var/log/guiltyspark/agent.log"

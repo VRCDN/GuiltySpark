@@ -369,9 +369,9 @@ install_agent() {
       apt)
         log_sources='log_sources:
   - path: "/var/log/syslog"
-    tags: ["syslog"]
+    tags: ["syslog", "cron", "daemon"]
   - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/kern.log"
     tags: ["syslog", "kernel"]
   - path: "/var/log/dpkg.log"
@@ -379,12 +379,11 @@ install_agent() {
         ;;
       pacman)
         log_sources='log_sources:
-  # Arch Linux: install rsyslog + the routing config at
-  # /etc/rsyslog.d/90-guiltyspark.conf to populate these files.
+  # Arch Linux: install rsyslog + routing config for these paths.
   - path: "/var/log/syslog"
-    tags: ["syslog"]
+    tags: ["syslog", "cron", "daemon"]
   - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/kern.log"
     tags: ["syslog", "kernel"]
   - path: "/var/log/pacman.log"
@@ -392,38 +391,45 @@ install_agent() {
         ;;
       apk)
         log_sources='log_sources:
-  # Alpine: BusyBox syslogd writes to /var/log/messages by default.
-  # Install syslog-ng + /etc/syslog-ng/conf.d/90-guiltyspark.conf for
-  # separate auth.log and kern.log routing.
+  # Alpine / BusyBox syslogd: all facilities go to /var/log/messages.
+  # The full tag union is required so that tag-scoped rules (sshd, pam,
+  # sudo, kernel, cron …) can fire.  Rule patterns only match lines from
+  # their respective daemons, so broad tags here cause no false positives.
+  #
+  # If you have syslog-ng installed and split facilities into separate files,
+  # replace this block with per-file entries matching the Debian section.
   - path: "/var/log/messages"
-    tags: ["syslog"]
-  - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
-  - path: "/var/log/kern.log"
-    tags: ["syslog", "kernel"]'
+    tags: ["syslog", "sshd", "auth", "pam", "sudo", "kernel", "cron", "daemon", "packages"]
+  # With syslog-ng facility routing (optional):
+  # - path: "/var/log/auth.log"
+  #   tags: ["syslog", "sshd", "auth", "pam", "sudo"]
+  # - path: "/var/log/kern.log"
+  #   tags: ["syslog", "kernel"]'
         ;;
       dnf|yum)
         log_sources='log_sources:
   - path: "/var/log/messages"
-    tags: ["syslog"]
+    tags: ["syslog", "kernel", "cron", "daemon"]
   - path: "/var/log/secure"
-    tags: ["syslog", "sshd", "pam", "auth"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/audit/audit.log"
-    tags: ["syslog", "auth", "audit"]
+    tags: ["auth", "audit"]'
   - path: "/var/log/kern.log"
     tags: ["syslog", "kernel"]'
         ;;
       *)
         log_sources='log_sources:
-  # Edit paths to match your distribution'"'"'s syslog output.
+  # Edit paths and tags to match your distribution.
+  # On distros where one file receives all facilities (e.g. Alpine BusyBox
+  # syslogd), list the full tag union so all rules can fire.
   - path: "/var/log/syslog"
-    tags: ["syslog"]
+    tags: ["syslog", "cron", "daemon"]
   - path: "/var/log/auth.log"
-    tags: ["syslog", "sshd", "pam", "auth"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/messages"
-    tags: ["syslog"]
+    tags: ["syslog", "sshd", "auth", "pam", "sudo", "kernel", "cron", "daemon", "packages"]
   - path: "/var/log/secure"
-    tags: ["syslog", "sshd", "pam", "auth"]'
+    tags: ["syslog", "sshd", "auth", "pam", "sudo"]'
         ;;
     esac
 

@@ -22,8 +22,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Duration wraps time.Duration so YAML can unmarshal it. The stdlib doesn't support
-// duration strings natively, so this is the workaround.
+// Duration wraps time.Duration so YAML can unmarshal duration strings ("30s", "1h", etc.).
 type Duration struct{ time.Duration }
 
 func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
@@ -116,13 +115,20 @@ func DefaultConfig() Config {
 	cfg.LogLevel = "info"
 	cfg.LogFormat = "json"
 	cfg.LogFile = "/var/log/guiltyspark/agent.log"
-	// common Linux log paths — not all will exist on every distro, and that's fine
+	// Non-existent paths are silently skipped. Tags reflect what each distro actually routes to each file.
 	cfg.LogSources = []LogSourceConfig{
-		{Path: "/var/log/syslog", Tags: []string{"syslog"}},
-		{Path: "/var/log/auth.log", Tags: []string{"syslog", "sshd", "pam", "auth"}},
+		// ── Debian / Ubuntu ─────────────────────────────────────────────────
+		{Path: "/var/log/syslog", Tags: []string{"syslog", "cron", "daemon"}},
+		{Path: "/var/log/auth.log", Tags: []string{"syslog", "sshd", "auth", "pam", "sudo"}},
 		{Path: "/var/log/kern.log", Tags: []string{"syslog", "kernel"}},
+		{Path: "/var/log/dpkg.log", Tags: []string{"syslog", "packages"}},
+		// ── RHEL / CentOS / Fedora ───────────────────────────────────────────
+		{Path: "/var/log/messages", Tags: []string{"syslog", "kernel", "cron", "daemon"}},
+		{Path: "/var/log/secure", Tags: []string{"syslog", "sshd", "auth", "pam", "sudo"}},
+		{Path: "/var/log/audit/audit.log", Tags: []string{"auth", "audit"}},
+		// Alpine — BusyBox syslogd dumps everything here. Tag [syslog] only;
+		// platform-scoped rules on the collector handle the rest.
 		{Path: "/var/log/messages", Tags: []string{"syslog"}},
-		{Path: "/var/log/secure", Tags: []string{"syslog", "sshd", "pam", "auth"}},
 	}
 	return cfg
 }
@@ -253,13 +259,12 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	// grab rules before we start scanning so we don't miss anything
 	sc := scanner.New(a.logger)
+	sc.SetOS(detectOSID())
 	a.syncRules(ctx, sc)
 
-	// heartbeat sender
 	hb := heartbeat.New(a.client, a.state.AgentID, a.cfg.Heartbeat.Interval.Duration, a.logger)
 	hb.SetRulesVersion(a.state.RulesVersion)
 
-	// build the list of files to tail
 	sources := buildLogSources(a.cfg)
 	logMgr := logreader.New(
 		sources,
@@ -281,15 +286,11 @@ func (a *Agent) Run(ctx context.Context) error {
 		)
 	}
 
-	// Inventory collector
 	invCollector := inventory.New(a.state.AgentID, a.logger)
 
-	// fire everything off
-
-	// heartbeat
 	go hb.Run(ctx)
 
-	// re-sync rules whenever the collector says they've changed
+	// re-sync rules when the collector says they've changed
 	go func() {
 		for {
 			select {
@@ -302,22 +303,15 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 	}()
 
-	// start tailing log files
 	go logMgr.Run(ctx)
-
-	// scan each line against the rules
 	go sc.Run(ctx, logMgr.Lines())
-
-	// batch and ship matched events
 	go a.runEventSender(ctx, sc.Events())
 
-	// Audit
 	if auditMgr != nil {
 		go auditMgr.Run(ctx)
 		go a.runAuditSender(ctx, auditMgr.Events())
 	}
 
-	// Inventory
 	if a.cfg.Inventory.Enabled {
 		go a.runInventoryLoop(ctx, invCollector)
 	}
@@ -327,8 +321,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.logger.Info("agent shutting down")
 	return nil
 }
-
-// rule syncing — called on startup and whenever the collector says rules changed
 
 func (a *Agent) syncRules(ctx context.Context, sc *scanner.Scanner) {
 	resp, err := a.client.GetRules(ctx)
@@ -341,7 +333,7 @@ func (a *Agent) syncRules(ctx context.Context, sc *scanner.Scanner) {
 	_ = saveState(a.cfg.StateFile, a.state)
 }
 
-// log event sender — batches up to 100 events or flushes every 5 seconds, whichever comes first
+// runEventSender batches up to 100 events or flushes every 5 seconds, whichever comes first.
 
 const (
 	batchMaxSize = 100
@@ -389,7 +381,7 @@ func (a *Agent) runEventSender(ctx context.Context, events <-chan models.LogEven
 	}
 }
 
-// same deal as the log event sender but for audit events
+// runAuditSender is the same deal as runEventSender but for audit events.
 
 func (a *Agent) runAuditSender(ctx context.Context, events <-chan models.AuditEvent) {
 	var batch []models.AuditEvent
@@ -432,8 +424,6 @@ func (a *Agent) runAuditSender(ctx context.Context, events <-chan models.AuditEv
 	}
 }
 
-// inventory collection loop
-
 func (a *Agent) runInventoryLoop(ctx context.Context, col *inventory.Collector) {
 	// collect right away, then tick on the interval
 	a.collectAndSendInventory(ctx, col)
@@ -465,8 +455,6 @@ func (a *Agent) collectAndSendInventory(ctx context.Context, col *inventory.Coll
 	a.logger.Info("inventory sent")
 }
 
-// Helpers
-
 func buildLogSources(cfg Config) []logreader.SourceConfig {
 	var sources []logreader.SourceConfig
 	for _, s := range cfg.LogSources {
@@ -484,8 +472,7 @@ func buildLogSources(cfg Config) []logreader.SourceConfig {
 }
 
 func collectIPAddresses() []string {
-	// stub — real IP collection happens in the inventory, which uses net.Interfaces().
-	// /proc/net/fib_trie is a pain to parse and we don't need it here.
+	// real IP collection is done in inventory via net.Interfaces()
 	hostname, _ := os.Hostname()
 	_ = hostname
 	return nil
@@ -503,6 +490,20 @@ func detectOS() string {
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
 			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), `"`)
+		}
+	}
+	return "linux"
+}
+
+// detectOSID reads ID= from /etc/os-release for platform rule matching.
+func detectOSID() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return "linux"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ID=") {
+			return strings.ToLower(strings.Trim(strings.TrimPrefix(line, "ID="), `"`))
 		}
 	}
 	return "linux"

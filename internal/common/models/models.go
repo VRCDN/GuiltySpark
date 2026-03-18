@@ -80,14 +80,15 @@ const (
 	SeverityCritical Severity = "critical"
 )
 
-// Rule is a regex pattern matched against log lines. Tags control which sources it runs against —
-// a rule only fires on sources that share at least one tag with it.
+// Rule is a regex pattern matched against log lines. Tags scope it to the right log source;
+// Platforms (optional) scopes it to specific OSes — empty means run everywhere.
 type Rule struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	Pattern     string    `json:"pattern"` // Go regex
-	Tags        []string  `json:"tags"`    // log-source tags this rule applies to
+	Pattern     string    `json:"pattern"`             // Go regex
+	Tags        []string  `json:"tags"`                // log-source tags this rule applies to
+	Platforms   []string  `json:"platforms,omitempty"` // OS IDs this rule applies to; empty = all
 	Severity    Severity  `json:"severity"`
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`

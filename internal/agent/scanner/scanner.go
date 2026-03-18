@@ -25,12 +25,12 @@ type Scanner struct {
 	mu      sync.RWMutex
 	rules   []compiledRule
 	version string
+	osID    string // lowercase /etc/os-release ID, e.g. "alpine", "debian"
 
 	events chan models.LogEvent
 	logger *slog.Logger
 }
 
-// New creates a Scanner.
 func New(logger *slog.Logger) *Scanner {
 	return &Scanner{
 		events: make(chan models.LogEvent, 4096),
@@ -41,6 +41,13 @@ func New(logger *slog.Logger) *Scanner {
 // Events returns the output channel. Drain it or matched events get dropped.
 func (s *Scanner) Events() <-chan models.LogEvent {
 	return s.events
+}
+
+// SetOS sets the OS ID used to match against platform-scoped rules. Call before UpdateRules.
+func (s *Scanner) SetOS(osID string) {
+	s.mu.Lock()
+	s.osID = strings.ToLower(osID)
+	s.mu.Unlock()
 }
 
 // UpdateRules swaps in a new rule set. Safe to call from any goroutine.
@@ -66,7 +73,6 @@ func (s *Scanner) UpdateRules(rules []models.Rule, version string) {
 	s.logger.Info("rules updated", "count", len(compiled), "version", version)
 }
 
-// Version returns the rules version the scanner is currently running.
 func (s *Scanner) Version() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -92,10 +98,14 @@ func (s *Scanner) Run(ctx context.Context, lines <-chan logreader.LogLine) {
 func (s *Scanner) scan(line logreader.LogLine) {
 	s.mu.RLock()
 	rules := s.rules
+	osID := s.osID
 	s.mu.RUnlock()
 
 	for _, r := range rules {
 		if !tagsOverlap(r.Tags, line.Tags) {
+			continue
+		}
+		if !platformMatches(r.Platforms, osID) {
 			continue
 		}
 		match := r.re.FindStringSubmatch(line.Line)
@@ -126,7 +136,7 @@ func (s *Scanner) scan(line logreader.LogLine) {
 	}
 }
 
-// tagsOverlap returns true if any tag in ruleTags appears in sourceTags.
+// tagsOverlap returns true if the rule and source share at least one tag.
 func tagsOverlap(ruleTags, sourceTags []string) bool {
 	if len(ruleTags) == 0 {
 		return true // a rule with no tags applies to everything
@@ -141,7 +151,20 @@ func tagsOverlap(ruleTags, sourceTags []string) bool {
 	return false
 }
 
-// extractCaptures pulls named capture groups out of a regex match.
+// platformMatches returns true if the rule is global (empty Platforms) or the OS matches.
+func platformMatches(platforms []string, osID string) bool {
+	if len(platforms) == 0 {
+		return true
+	}
+	for _, p := range platforms {
+		if strings.EqualFold(p, osID) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractCaptures pulls named groups out of a regex match.
 func extractCaptures(re *regexp.Regexp, match []string) map[string]string {
 	names := re.SubexpNames()
 	captures := make(map[string]string)

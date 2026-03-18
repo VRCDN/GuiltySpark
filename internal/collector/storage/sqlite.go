@@ -133,6 +133,8 @@ func (s *SQLiteStorage) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_agent_id ON audit_events(agent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp ON audit_events(timestamp)`,
+		// Migration 17: add platforms column to rules table for OS-specific rules.
+		`ALTER TABLE rules ADD COLUMN platforms TEXT NOT NULL DEFAULT '[]'`,
 	}
 
 	for i, stmt := range migrations {
@@ -331,9 +333,9 @@ func (s *SQLiteStorage) UpdateAgentLastSeen(ctx context.Context, id string, t ti
 
 func (s *SQLiteStorage) CreateRule(ctx context.Context, r *models.Rule) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO rules(id,name,description,pattern,tags,severity,enabled,created_at,updated_at,version)
-		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, r.Name, r.Description, r.Pattern, toJSON(r.Tags),
+		`INSERT INTO rules(id,name,description,pattern,tags,platforms,severity,enabled,created_at,updated_at,version)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.Name, r.Description, r.Pattern, toJSON(r.Tags), toJSON(r.Platforms),
 		string(r.Severity), boolInt(r.Enabled),
 		r.CreatedAt.UTC(), r.UpdatedAt.UTC(), r.Version,
 	)
@@ -342,17 +344,17 @@ func (s *SQLiteStorage) CreateRule(ctx context.Context, r *models.Rule) error {
 
 func (s *SQLiteStorage) GetRule(ctx context.Context, id string) (*models.Rule, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id,name,description,pattern,tags,severity,enabled,created_at,updated_at,version
+		`SELECT id,name,description,pattern,tags,platforms,severity,enabled,created_at,updated_at,version
 		 FROM rules WHERE id=?`, id)
 	return s.scanRule(row)
 }
 
 func (s *SQLiteStorage) scanRule(row *sql.Row) (*models.Rule, error) {
 	var r models.Rule
-	var tagsRaw, createdAt, updatedAt string
+	var tagsRaw, platformsRaw, createdAt, updatedAt string
 	var enabledInt int
 	if err := row.Scan(
-		&r.ID, &r.Name, &r.Description, &r.Pattern, &tagsRaw,
+		&r.ID, &r.Name, &r.Description, &r.Pattern, &tagsRaw, &platformsRaw,
 		&r.Severity, &enabledInt, &createdAt, &updatedAt, &r.Version,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -361,6 +363,7 @@ func (s *SQLiteStorage) scanRule(row *sql.Row) (*models.Rule, error) {
 		return nil, fmt.Errorf("scan rule: %w", err)
 	}
 	r.Tags = fromJSONStrings(tagsRaw)
+	r.Platforms = fromJSONStrings(platformsRaw)
 	r.Enabled = enabledInt != 0
 	r.CreatedAt = parseTime(createdAt)
 	r.UpdatedAt = parseTime(updatedAt)
@@ -369,7 +372,7 @@ func (s *SQLiteStorage) scanRule(row *sql.Row) (*models.Rule, error) {
 
 func (s *SQLiteStorage) ListRules(ctx context.Context) ([]*models.Rule, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id,name,description,pattern,tags,severity,enabled,created_at,updated_at,version
+		`SELECT id,name,description,pattern,tags,platforms,severity,enabled,created_at,updated_at,version
 		 FROM rules ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -379,15 +382,16 @@ func (s *SQLiteStorage) ListRules(ctx context.Context) ([]*models.Rule, error) {
 	var rules []*models.Rule
 	for rows.Next() {
 		var r models.Rule
-		var tagsRaw, createdAt, updatedAt string
+		var tagsRaw, platformsRaw, createdAt, updatedAt string
 		var enabledInt int
 		if err := rows.Scan(
-			&r.ID, &r.Name, &r.Description, &r.Pattern, &tagsRaw,
+			&r.ID, &r.Name, &r.Description, &r.Pattern, &tagsRaw, &platformsRaw,
 			&r.Severity, &enabledInt, &createdAt, &updatedAt, &r.Version,
 		); err != nil {
 			return nil, err
 		}
 		r.Tags = fromJSONStrings(tagsRaw)
+		r.Platforms = fromJSONStrings(platformsRaw)
 		r.Enabled = enabledInt != 0
 		r.CreatedAt = parseTime(createdAt)
 		r.UpdatedAt = parseTime(updatedAt)
@@ -398,9 +402,9 @@ func (s *SQLiteStorage) ListRules(ctx context.Context) ([]*models.Rule, error) {
 
 func (s *SQLiteStorage) UpdateRule(ctx context.Context, r *models.Rule) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE rules SET name=?,description=?,pattern=?,tags=?,severity=?,enabled=?,updated_at=?,version=version+1
+		`UPDATE rules SET name=?,description=?,pattern=?,tags=?,platforms=?,severity=?,enabled=?,updated_at=?,version=version+1
 		 WHERE id=?`,
-		r.Name, r.Description, r.Pattern, toJSON(r.Tags),
+		r.Name, r.Description, r.Pattern, toJSON(r.Tags), toJSON(r.Platforms),
 		string(r.Severity), boolInt(r.Enabled), time.Now().UTC(), r.ID,
 	)
 	return err
