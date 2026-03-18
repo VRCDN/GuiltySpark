@@ -32,7 +32,11 @@ type Config struct {
 	} `yaml:"server"`
 
 	Database struct {
-		Path string `yaml:"path"`
+		Path      string `yaml:"path"`
+		Retention struct {
+			Enabled bool     `yaml:"enabled"`
+			MaxAge  Duration `yaml:"max_age"`
+		} `yaml:"retention"`
 	} `yaml:"database"`
 
 	Auth struct {
@@ -117,6 +121,8 @@ func DefaultConfig() Config {
 	cfg.Server.Host = "0.0.0.0"
 	cfg.Server.Port = 9900
 	cfg.Database.Path = "/var/lib/guiltyspark/collector.db"
+	cfg.Database.Retention.Enabled = true
+	cfg.Database.Retention.MaxAge.Duration = 365 * 24 * time.Hour
 	cfg.Heartbeat.Timeout.Duration = 90 * time.Second
 	cfg.Heartbeat.CheckInterval.Duration = 30 * time.Second
 	cfg.Alerts.DedupWindow.Duration = 5 * time.Minute
@@ -258,14 +264,53 @@ func (c *Collector) SeedRules(ctx context.Context, path string) error {
 	return nil
 }
 
-// Run starts the heartbeat monitor and the HTTP server. Blocks until shutdown.
+// Run starts the heartbeat monitor, the data-retention pruner, and the HTTP server. Blocks until shutdown.
 func (c *Collector) Run(ctx context.Context) error {
 	go c.hbMon.Run(ctx)
+
+	if c.cfg.Database.Retention.Enabled {
+		go c.runPruner(ctx)
+	}
 
 	if err := c.api.Start(ctx); err != nil {
 		return fmt.Errorf("api server: %w", err)
 	}
 	return nil
+}
+
+// runPruner runs the data-retention pruner on a 1-hour tick for the lifetime of ctx.
+func (c *Collector) runPruner(ctx context.Context) {
+	maxAge := c.cfg.Database.Retention.MaxAge.Duration
+	// Run once at startup so an overdue purge isn't delayed by the first tick.
+	c.pruneOnce(ctx, maxAge)
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.pruneOnce(ctx, maxAge)
+		}
+	}
+}
+
+func (c *Collector) pruneOnce(ctx context.Context, maxAge time.Duration) {
+	stats, err := c.store.PruneOldData(ctx, maxAge)
+	if err != nil {
+		c.logger.Error("data retention pruning failed", "error", err)
+		return
+	}
+	total := stats.Alerts + stats.LogEvents + stats.AuditEvents
+	if total > 0 {
+		c.logger.Info("data retention pruning completed",
+			"alerts_deleted", stats.Alerts,
+			"log_events_deleted", stats.LogEvents,
+			"audit_events_deleted", stats.AuditEvents,
+			"max_age", maxAge.String(),
+		)
+	}
 }
 
 // Close shuts down the database connection.

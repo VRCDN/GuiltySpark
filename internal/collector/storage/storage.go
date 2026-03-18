@@ -8,6 +8,13 @@ import (
 	"github.com/VRCDN/guiltyspark/internal/common/models"
 )
 
+// PruneStats contains the number of rows deleted from each time-series table during a pruning run.
+type PruneStats struct {
+	Alerts      int64
+	LogEvents   int64
+	AuditEvents int64
+}
+
 // Storage is the persistence interface. All implementations must be goroutine-safe.
 type Storage interface {
 	// agents
@@ -52,6 +59,11 @@ type Storage interface {
 
 	SaveAuditEvent(ctx context.Context, event *models.AuditEvent) error
 	ListAuditEvents(ctx context.Context, filter models.AuditEventFilter) ([]*models.AuditEvent, error)
+
+	// PruneOldData deletes records older than maxAge from time-series tables
+	// (alerts, log_events, audit_events). Safe to call concurrently; runs
+	// inside a transaction and checkpoints the WAL afterwards.
+	PruneOldData(ctx context.Context, maxAge time.Duration) (PruneStats, error)
 
 	// Close releases storage resources.
 	Close() error

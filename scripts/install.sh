@@ -264,6 +264,9 @@ server:
 
 database:
   path: "${DATA_DIR}/collector.db"
+  retention:
+    enabled: true
+    max_age: "8760h"  # 1 year
 
 auth:
   admin_api_key: "${admin_key}"

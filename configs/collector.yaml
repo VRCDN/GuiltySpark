@@ -14,6 +14,13 @@ database:
   # Directory is created automatically if it does not exist.
   path: "/var/lib/guiltyspark/collector.db"
 
+  retention:
+    # Set to false to disable automatic pruning of old time-series data.
+    enabled: true
+    # Delete alerts, log events, and audit events older than this duration.
+    # Accepts Go duration strings: h, m, s — e.g. "8760h" = 1 year.
+    max_age: "8760h"  # 1 year
+
 auth:
   # Generate a strong random key: openssl rand -hex 32
   # This key is required for all management (admin) API requests.

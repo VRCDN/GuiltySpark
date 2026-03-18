@@ -27,9 +27,18 @@ func NewSQLite(path string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// SQLite only permits one concurrent writer even in WAL mode.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0) // keep the connection alive indefinitely?
+
 	// WAL mode lets reads proceed while a write is in progress — matters a lot with many concurrent agents
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
 		return nil, fmt.Errorf("enable WAL: %w", err)
+	}
+	// never corrupt the database only loose latest transaction
+	if _, err := db.Exec(`PRAGMA synchronous=NORMAL`); err != nil {
+		return nil, fmt.Errorf("set synchronous mode: %w", err)
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
 		return nil, fmt.Errorf("enable FK: %w", err)
@@ -739,6 +748,34 @@ func (s *SQLiteStorage) ListAuditEvents(ctx context.Context, filter models.Audit
 		events = append(events, &e)
 	}
 	return events, rows.Err()
+}
+
+// Pruning, I mean, its in the name...
+func (s *SQLiteStorage) PruneOldData(ctx context.Context, maxAge time.Duration) (PruneStats, error) {
+	cutoff := time.Now().UTC().Add(-maxAge)
+	var stats PruneStats
+
+	for _, tbl := range []struct {
+		name string
+		col  string
+		rows *int64
+	}{
+		{"alerts", "received_at", &stats.Alerts},
+		{"log_events", "received_at", &stats.LogEvents},
+		{"audit_events", "received_at", &stats.AuditEvents},
+	} {
+		res, err := s.db.ExecContext(ctx,
+			`DELETE FROM `+tbl.name+` WHERE `+tbl.col+` < ?`, cutoff)
+		if err != nil {
+			return stats, fmt.Errorf("prune %s: %w", tbl.name, err)
+		}
+		*tbl.rows, _ = res.RowsAffected()
+	}
+
+	// pls flush
+	_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`)
+
+	return stats, nil
 }
 
 // Utilities
