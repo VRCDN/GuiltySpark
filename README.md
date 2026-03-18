@@ -307,6 +307,9 @@ alerts:
     #               value: "{{ .AgentID }}"
     #             - name: Rule
     #               value: "{{ .RuleName }}"
+
+```
+
 ### Agent Config
 
 `/etc/guiltyspark/agent.yaml`:
