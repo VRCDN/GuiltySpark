@@ -413,7 +413,7 @@ install_agent() {
   - path: "/var/log/secure"
     tags: ["syslog", "sshd", "auth", "pam", "sudo"]
   - path: "/var/log/audit/audit.log"
-    tags: ["auth", "audit"]'
+    tags: ["auth", "audit"]
   - path: "/var/log/kern.log"
     tags: ["syslog", "kernel"]'
         ;;
