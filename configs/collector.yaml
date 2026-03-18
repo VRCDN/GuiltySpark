@@ -41,6 +41,9 @@ alerts:
       # Optional HMAC-SHA256 signing secret.
       # The signature is sent in the X-GuiltySpark-Signature header.
       secret: ""
+      # Only fire for this severity and above: info | low | medium | high | critical
+      # Leave unset (or empty) to receive everything.
+      min_level: ""
 
     email:
       enabled: false
@@ -52,11 +55,13 @@ alerts:
       # SMTP AUTH credentials (leave blank for no auth / relay)
       username: ""
       password: ""
+      min_level: "high"  # email is noisy — only send high and critical by default
 
     slack:
       enabled: false
       # Slack Incoming Webhook URL
       webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+      min_level: ""  # empty = all severities
 
     discord:
       enabled: false
@@ -64,6 +69,7 @@ alerts:
       webhook_url: "https://discord.com/api/webhooks/<id>/<token>"
       # Optional: override the bot display name shown in Discord.
       # username: "GuiltySpark"
+      min_level: ""  # empty = all severities
 
     # custom_webhooks lets you define fully templated outbound HTTP requests.
     # The body_template is a Go text/template that renders to a YAML document;
@@ -79,6 +85,7 @@ alerts:
     #   - name: "PagerDuty"
     #     enabled: true
     #     url: "https://events.pagerduty.com/v2/enqueue"
+    #     min_level: "high"  # only page on high/critical
     #     headers:
     #       Authorization: "Token token=YOUR_PAGERDUTY_INTEGRATION_KEY"
     #     body_template: |
@@ -96,6 +103,7 @@ alerts:
     #   - name: "Teams"
     #     enabled: true
     #     url: "https://outlook.office.com/webhook/..."
+    #     min_level: "medium"
     #     body_template: |
     #       "@type": "MessageCard"
     #       "@context": "http://schema.org/extensions"

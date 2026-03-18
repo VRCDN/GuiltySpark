@@ -261,23 +261,28 @@ alerts:
       enabled: true
       url:    "https://hooks.example.com/guiltyspark"
       secret: "hmac-signing-secret"
+      min_level: ""        # empty = all severities; or: info | low | medium | high | critical
     # discord:
     #   enabled: true
     #   webhook_url: "https://discord.com/api/webhooks/<id>/<token>"
-    #   username: "GuiltySpark"   # optional bot display name override
+    #   username: "GuiltySpark"
+    #   min_level: "medium"
     # slack:
     #   enabled: true
     #   webhook_url: "https://hooks.slack.com/services/..."
+    #   min_level: ""
     # email:
     #   enabled: true
     #   smtp_host: "smtp.example.com"
     #   smtp_port: 587
     #   from:      "guiltyspark@example.com"
     #   to:        ["ops@example.com"]
+    #   min_level: "high"  # email is noisy — high/critical only recommended
     # custom_webhooks:
     #   - name: "PagerDuty"
     #     enabled: true
     #     url: "https://events.pagerduty.com/v2/enqueue"
+    #     min_level: "high"  # only page on high/critical
     #     headers:
     #       Authorization: "Token token=YOUR_KEY"
     #     body_template: |
@@ -294,6 +299,7 @@ alerts:
     #   - name: "Teams"
     #     enabled: true
     #     url: "https://outlook.office.com/webhook/..."
+    #     min_level: "medium"
     #     body_template: |
     #       "@type": "MessageCard"
     #       "@context": "http://schema.org/extensions"

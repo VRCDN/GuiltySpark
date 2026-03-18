@@ -32,9 +32,10 @@ type NotificationConfig struct {
 }
 
 type WebhookConfig struct {
-	Enabled bool
-	URL     string
-	Secret  string
+	Enabled  bool
+	URL      string
+	Secret   string
+	MinLevel models.Severity // only fire for alerts at or above this severity; empty = all
 }
 
 type EmailConfig struct {
@@ -45,17 +46,20 @@ type EmailConfig struct {
 	To       []string
 	Username string
 	Password string
+	MinLevel models.Severity
 }
 
 type SlackConfig struct {
 	Enabled    bool
 	WebhookURL string
+	MinLevel   models.Severity
 }
 
 type DiscordConfig struct {
 	Enabled    bool
 	WebhookURL string
 	Username   string
+	MinLevel   models.Severity
 }
 
 // CustomWebhookConfig allows users to define arbitrary HTTP notifications with Go templates.
@@ -76,6 +80,7 @@ type CustomWebhookConfig struct {
 	Secret       string            // HMAC-SHA256 signing key
 	Headers      map[string]string // extra request headers
 	BodyTemplate string
+	MinLevel     models.Severity
 }
 
 type alertTemplateData struct {
@@ -111,6 +116,22 @@ func alertToTemplateData(a *models.Alert) alertTemplateData {
 var customWebhookFuncs = template.FuncMap{
 	"upper": strings.ToUpper,
 	"lower": strings.ToLower,
+}
+
+// severityLevel maps a Severity to a comparable integer. Empty string (unset) is treated as info.
+func severityLevel(s models.Severity) int {
+	switch s {
+	case models.SeverityLow:
+		return 1
+	case models.SeverityMedium:
+		return 2
+	case models.SeverityHigh:
+		return 3
+	case models.SeverityCritical:
+		return 4
+	default: // info or empty
+		return 0
+	}
 }
 
 // dedupKey identifies a (agent, rule) pair for the dedup cache.
@@ -252,28 +273,29 @@ func (m *Manager) AcknowledgeAlert(ctx context.Context, id, by string) error {
 // Notifications
 
 func (m *Manager) notify(alert *models.Alert) {
-	if m.cfg.Webhook.Enabled {
+	level := severityLevel(alert.Severity)
+	if m.cfg.Webhook.Enabled && level >= severityLevel(m.cfg.Webhook.MinLevel) {
 		if err := m.sendWebhook(alert); err != nil {
 			m.logger.Error("webhook notification failed", "error", err, "alert_id", alert.ID)
 		}
 	}
-	if m.cfg.Email.Enabled {
+	if m.cfg.Email.Enabled && level >= severityLevel(m.cfg.Email.MinLevel) {
 		if err := m.sendEmail(alert); err != nil {
 			m.logger.Error("email notification failed", "error", err, "alert_id", alert.ID)
 		}
 	}
-	if m.cfg.Slack.Enabled {
+	if m.cfg.Slack.Enabled && level >= severityLevel(m.cfg.Slack.MinLevel) {
 		if err := m.sendSlack(alert); err != nil {
 			m.logger.Error("slack notification failed", "error", err, "alert_id", alert.ID)
 		}
 	}
-	if m.cfg.Discord.Enabled {
+	if m.cfg.Discord.Enabled && level >= severityLevel(m.cfg.Discord.MinLevel) {
 		if err := m.sendDiscord(alert); err != nil {
 			m.logger.Error("discord notification failed", "error", err, "alert_id", alert.ID)
 		}
 	}
 	for _, cw := range m.cfg.CustomWebhooks {
-		if !cw.Enabled {
+		if !cw.Enabled || level < severityLevel(cw.MinLevel) {
 			continue
 		}
 		if err := m.sendCustomWebhook(cw, alert); err != nil {

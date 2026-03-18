@@ -49,27 +49,31 @@ type Config struct {
 		DedupWindow   Duration `yaml:"dedup_window"`
 		Notifications struct {
 			Webhook struct {
-				Enabled bool   `yaml:"enabled"`
-				URL     string `yaml:"url"`
-				Secret  string `yaml:"secret"`
+				Enabled  bool            `yaml:"enabled"`
+				URL      string          `yaml:"url"`
+				Secret   string          `yaml:"secret"`
+				MinLevel models.Severity `yaml:"min_level"`
 			} `yaml:"webhook"`
 			Email struct {
-				Enabled  bool     `yaml:"enabled"`
-				SMTPHost string   `yaml:"smtp_host"`
-				SMTPPort int      `yaml:"smtp_port"`
-				From     string   `yaml:"from"`
-				To       []string `yaml:"to"`
-				Username string   `yaml:"username"`
-				Password string   `yaml:"password"`
+				Enabled  bool            `yaml:"enabled"`
+				SMTPHost string          `yaml:"smtp_host"`
+				SMTPPort int             `yaml:"smtp_port"`
+				From     string          `yaml:"from"`
+				To       []string        `yaml:"to"`
+				Username string          `yaml:"username"`
+				Password string          `yaml:"password"`
+				MinLevel models.Severity `yaml:"min_level"`
 			} `yaml:"email"`
 			Slack struct {
-				Enabled    bool   `yaml:"enabled"`
-				WebhookURL string `yaml:"webhook_url"`
+				Enabled    bool            `yaml:"enabled"`
+				WebhookURL string          `yaml:"webhook_url"`
+				MinLevel   models.Severity `yaml:"min_level"`
 			} `yaml:"slack"`
 			Discord struct {
-				Enabled    bool   `yaml:"enabled"`
-				WebhookURL string `yaml:"webhook_url"`
-				Username   string `yaml:"username"`
+				Enabled    bool            `yaml:"enabled"`
+				WebhookURL string          `yaml:"webhook_url"`
+				Username   string          `yaml:"username"`
+				MinLevel   models.Severity `yaml:"min_level"`
 			} `yaml:"discord"`
 			CustomWebhooks []struct {
 				Name         string            `yaml:"name"`
@@ -80,6 +84,7 @@ type Config struct {
 				Secret       string            `yaml:"secret"`
 				Headers      map[string]string `yaml:"headers"`
 				BodyTemplate string            `yaml:"body_template"`
+				MinLevel     models.Severity   `yaml:"min_level"`
 			} `yaml:"custom_webhooks"`
 		} `yaml:"notifications"`
 	} `yaml:"alerts"`
@@ -165,14 +170,16 @@ func New(cfg Config, logger *slog.Logger) (*Collector, error) {
 			Secret:       cw.Secret,
 			Headers:      cw.Headers,
 			BodyTemplate: cw.BodyTemplate,
+			MinLevel:     cw.MinLevel,
 		})
 	}
 
 	notifCfg := alerts.NotificationConfig{
 		Webhook: alerts.WebhookConfig{
-			Enabled: cfg.Alerts.Notifications.Webhook.Enabled,
-			URL:     cfg.Alerts.Notifications.Webhook.URL,
-			Secret:  cfg.Alerts.Notifications.Webhook.Secret,
+			Enabled:  cfg.Alerts.Notifications.Webhook.Enabled,
+			URL:      cfg.Alerts.Notifications.Webhook.URL,
+			Secret:   cfg.Alerts.Notifications.Webhook.Secret,
+			MinLevel: cfg.Alerts.Notifications.Webhook.MinLevel,
 		},
 		Email: alerts.EmailConfig{
 			Enabled:  cfg.Alerts.Notifications.Email.Enabled,
@@ -182,15 +189,18 @@ func New(cfg Config, logger *slog.Logger) (*Collector, error) {
 			To:       cfg.Alerts.Notifications.Email.To,
 			Username: cfg.Alerts.Notifications.Email.Username,
 			Password: cfg.Alerts.Notifications.Email.Password,
+			MinLevel: cfg.Alerts.Notifications.Email.MinLevel,
 		},
 		Slack: alerts.SlackConfig{
 			Enabled:    cfg.Alerts.Notifications.Slack.Enabled,
 			WebhookURL: cfg.Alerts.Notifications.Slack.WebhookURL,
+			MinLevel:   cfg.Alerts.Notifications.Slack.MinLevel,
 		},
 		Discord: alerts.DiscordConfig{
 			Enabled:    cfg.Alerts.Notifications.Discord.Enabled,
 			WebhookURL: cfg.Alerts.Notifications.Discord.WebhookURL,
 			Username:   cfg.Alerts.Notifications.Discord.Username,
+			MinLevel:   cfg.Alerts.Notifications.Discord.MinLevel,
 		},
 		CustomWebhooks: customWebhooks,
 	}
