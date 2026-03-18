@@ -7,6 +7,7 @@ GuiltySpark monitors your fleet of Linux servers by collecting logs, tracking sy
 ## Table of Contents
 
 - [Features](#features)
+- [FAQ](#faq)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
@@ -22,6 +23,20 @@ GuiltySpark monitors your fleet of Linux servers by collecting logs, tracking sy
 - [Building from Source](#building-from-source)
 - [Security Notes](#security-notes)
 - [License](#license)
+
+---
+
+## FAQ
+
+
+**Why make GuiltySpark public?**
+We have made GuiltySpark public as we didn't feel any of the existing solutions fit our needs and that may apply to others too. The existing solutions were either too restricted in what you could do or, too bulky to be used by our service and contained a lot that was not needed.
+
+**Do we think this is a perfect solution?**
+No, obviously not. But we hope that we can expand and improve our solution with the community
+
+**Is there a roadmap for future features?**
+No. Not yet anyway.
 
 ---
 
