@@ -1,0 +1,17 @@
+# GuiltySpark Collector — logrotate configuration
+
+/var/log/guiltyspark/collector.log
+/var/log/guiltyspark/collector.error.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 guiltyspark guiltyspark
+    postrotate
+        if command -v rc-service >/dev/null 2>&1; then
+            rc-service guiltyspark-collector reload 2>/dev/null || true
+        fi
+    endscript
+}

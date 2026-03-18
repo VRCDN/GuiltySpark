@@ -1,8 +1,7 @@
 # binaries
 bin/
 dist/
-guiltyspark-collector
-guiltyspark-agent
+
 
 # build artefacts
 *.o

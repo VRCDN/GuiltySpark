@@ -1,0 +1,24 @@
+# GuiltySpark Agent — logrotate configuration
+# Applies to OpenRC / syslog-based installs where the agent writes to flat
+# files.  Under systemd the agent logs to the journal; this file is a no-op
+# in that case but is harmless to install.
+
+/var/log/guiltyspark/agent.log
+/var/log/guiltyspark/agent.error.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # Create new log file owned by root (agent runs as root)
+    create 0640 root root
+    # Signal the running agent to reopen log files after rotation.
+    # For systemd installs the service uses StandardOutput=journal so this
+    # postrotate block simply exits cleanly.
+    postrotate
+        if command -v rc-service >/dev/null 2>&1; then
+            rc-service guiltyspark-agent reload 2>/dev/null || true
+        fi
+    endscript
+}
