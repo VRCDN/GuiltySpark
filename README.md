@@ -35,6 +35,9 @@ We have made GuiltySpark public as we didn't feel any of the existing solutions 
 **Do we think this is a perfect solution?**
 No, obviously not. But we hope that we can expand and improve our solution with the community
 
+**Should I use this?**
+Probably not, at least, I wouldn't trust it as a full security solution on anything production or sensitive. GuiltySpark is more of a in development test that *may* become good in the future but, for right now there are likely major issues with the implimentation.
+
 **Is there a roadmap for future features?**
 No. Not yet anyway.
 
